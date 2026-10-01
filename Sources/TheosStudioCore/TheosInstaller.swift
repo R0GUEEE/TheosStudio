@@ -173,7 +173,7 @@ public enum TheosInstaller {
 
         if options.scope == .dependenciesOnly || options.scope == .theosAndSDK {
             if privileges.canEscalate {
-                if require("apt-get", "the dependency packages") {
+                if require("apt-get", because: "the dependency packages") {
                     let packages = options.procursus ? ["theos-dependencies"] : dependencyPackages
                     steps.append(InstallStep(
                         label: "Updating package lists",
