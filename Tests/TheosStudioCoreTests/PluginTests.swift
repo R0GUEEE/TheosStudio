@@ -21,6 +21,30 @@ final class PluginTests: XCTestCase {
         XCTAssertEqual(manifest.scopes, [.global])
         XCTAssertEqual(manifest.actions.first?.systemImage, "terminal")
         XCTAssertFalse(manifest.actions.first?.requiresProject ?? true)
+        XCTAssertTrue(manifest.snippets.isEmpty)
+    }
+
+    func testSnippetContributionDecodesAndGetsNamespaced() throws {
+        let json = """
+        {
+          "id": "example.snippets",
+          "name": "Snippets",
+          "snippets": [
+            {
+              "id": "guard",
+              "title": "Guard",
+              "language": "code",
+              "suggestedFileName": "Guard.x",
+              "body": "NSLog(@\"hello\");"
+            }
+          ]
+        }
+        """
+        let manifest = try JSONDecoder().decode(StudioPluginManifest.self, from: Data(json.utf8))
+        let contribution = try XCTUnwrap(manifest.snippets.first)
+        XCTAssertEqual(contribution.language, .code)
+        XCTAssertEqual(contribution.snippet(pluginID: manifest.id).id, "plugin.example.snippets.guard")
+        XCTAssertTrue(contribution.body.hasSuffix("\n"))
     }
 
     func testValidatorRejectsBadIDsAndPackageWithoutProject() {
