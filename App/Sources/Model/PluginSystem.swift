@@ -168,6 +168,14 @@ enum BuiltInPlugins {
                     command: ["git", "-C", "{{project}}", "diff", "--stat"],
                     requiresProject: true
                 ),
+                PluginAction(
+                    id: "git-recent",
+                    title: "Recent commits",
+                    detail: "The ten most recent commits in this project.",
+                    systemImage: "clock.arrow.circlepath",
+                    command: ["git", "-C", "{{project}}", "log", "-10", "--oneline", "--decorate"],
+                    requiresProject: true
+                ),
             ]
         ),
         StudioPluginManifest(
@@ -194,6 +202,15 @@ enum BuiltInPlugins {
                     detail: "Every path that the newest package would install.",
                     systemImage: "list.bullet.indent",
                     command: ["dpkg-deb", "--contents", "{{package}}"],
+                    requiresProject: true,
+                    requiresPackage: true
+                ),
+                PluginAction(
+                    id: "package-fields",
+                    title: "Key package fields",
+                    detail: "Identifier, version, architecture and dependencies from the built package.",
+                    systemImage: "list.bullet.rectangle.portrait",
+                    command: ["dpkg-deb", "--field", "{{package}}", "Package", "Version", "Architecture", "Depends"],
                     requiresProject: true,
                     requiresPackage: true
                 ),
@@ -434,7 +451,7 @@ struct PluginCenterView: View {
                 } header: {
                     Text("External plugins")
                 } footer: {
-                    Text("Drop JSON manifests here with Filza, or import one from Files. A plugin command is an argument array, not a shell string; tokens include {{project}}, {{package}}, {{theos}}, {{home}} and {{plugin}}.")
+                    Text("Drop JSON manifests here with Filza, or import one from Files. Commands are argument arrays, not shell strings. Project metadata and filesystem paths are available as tokens.")
                 }
 
                 if !manager.loadIssues.isEmpty {
