@@ -1,7 +1,7 @@
 import Foundation
 
 /// One row in the project browser.
-public struct ProjectEntry: Equatable, Sendable {
+public struct ProjectEntry: Equatable, Sendable, Identifiable {
     /// Path relative to the project root, `/`-separated.
     public let relativePath: String
     public let isDirectory: Bool
@@ -12,6 +12,9 @@ public struct ProjectEntry: Equatable, Sendable {
         self.isDirectory = isDirectory
         self.size = size
     }
+
+    /// The relative path is the identity: two rows cannot have the same one.
+    public var id: String { relativePath }
 
     public var language: SyntaxLanguage { SyntaxLanguage.forFileName(relativePath) }
 

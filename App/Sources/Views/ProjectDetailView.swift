@@ -396,7 +396,6 @@ struct ProjectDetailView: View {
         }
     }
 
-    @ViewBuilder
     private var toolsSection: some View {
         Section {
             NavigationLink(destination: SourceControlView(store: store, project: current)) {
@@ -412,6 +411,7 @@ struct ProjectDetailView: View {
         }
     }
 
+    @ViewBuilder
     private var problemsSection: some View {
         if !controlIssues.isEmpty {
             Section {
