@@ -313,7 +313,10 @@ final class ProjectSearchTests: XCTestCase {
     func testCaseSensitivity() {
         XCTAssertEqual(ProjectSearch.matches(in: files, query: "sbiconview").count, 2)
         XCTAssertTrue(ProjectSearch.matches(in: files, query: "sbiconview", caseSensitive: true).isEmpty)
-        XCTAssertEqual(ProjectSearch.matches(in: files, query: "MYTWEAK", caseSensitive: true).count, 2)
+        // "MyTweak" appears twice in the Makefile, and nowhere with different case.
+        XCTAssertEqual(ProjectSearch.matches(in: files, query: "MyTweak", caseSensitive: true).count, 2)
+        XCTAssertTrue(ProjectSearch.matches(in: files, query: "MYTWEAK", caseSensitive: true).isEmpty)
+        XCTAssertEqual(ProjectSearch.matches(in: files, query: "mytweak").count, 2)
     }
 
     func testTwoOccurrencesOnOneLineAreTwoMatches() {
