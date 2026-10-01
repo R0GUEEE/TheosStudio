@@ -34,7 +34,7 @@ public struct ProjectSearchResult: Equatable, Sendable, Identifiable {
     public var id: String { "\(path):\(line):\(column):\(matchedText)" }
 }
 
-public enum ProjectSearch {
+public enum AdvancedProjectSearch {
     public static func search(query: String, files: [ProjectFile], options: ProjectSearchOptions = .init()) -> [ProjectSearchResult] {
         guard !query.isEmpty else { return [] }
 
