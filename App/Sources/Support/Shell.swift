@@ -132,11 +132,20 @@ final class ShellProcess {
                 DispatchQueue.main.async { onLine(line) }
             }
 
+            // The wait(2) status word is not a plain exit code: the low seven
+            // bits hold the signal that killed the child (0 when it exited on
+            // its own) and the next byte is the exit status. Swift does not
+            // import the function-like macros that read it — WIFEXITED,
+            // WIFSIGNALED and WTERMSIG are "function like macros not supported"
+            // — so the layout is spelled out rather than guessed at.
+            let signal = status & 0x7F
             let code: Int32
-            if WIFEXITED(status) {
-                code = WEXITSTATUS(status)
-            } else if WIFSIGNALED(status) {
-                code = 128 + WTERMSIG(status)
+            if signal == 0 {
+                code = (status >> 8) & 0xFF
+            } else if signal != 0x7F {
+                // Killed by a signal: report it the way a shell does, so a
+                // cancelled build and a crashed compiler read differently.
+                code = 128 + signal
             } else {
                 code = status
             }

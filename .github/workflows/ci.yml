@@ -80,7 +80,10 @@ jobs:
           # Every generated project must be self-describing: the app labels a
           # folder by reading these two files back.
           for kind in tweak tweakWithPreferences preferenceBundle application tool; do
-            .build/debug/theosstudio new "$kind" "Smoky$kind" --dir "/tmp/smoke/$kind" --identifier "com.example.smoky$kind"
+            # A package identifier is lowercase by definition; the project name is
+            # not. `lint` would (correctly) reject the camel-case form.
+            slug=$(printf '%s' "$kind" | tr '[:upper:]' '[:lower:]')
+            .build/debug/theosstudio new "$kind" "Smoky$kind" --dir "/tmp/smoke/$kind" --identifier "com.example.smoky$slug"
             .build/debug/theosstudio lint "/tmp/smoke/$kind"
           done
 
