@@ -52,6 +52,42 @@ public struct PluginAction: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+public struct PluginSnippet: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var title: String
+    public var summary: String
+    public var language: SyntaxLanguage
+    public var suggestedFileName: String
+    public var body: String
+
+    public init(
+        id: String,
+        title: String,
+        summary: String = "",
+        language: SyntaxLanguage = .code,
+        suggestedFileName: String,
+        body: String
+    ) {
+        self.id = id
+        self.title = title
+        self.summary = summary
+        self.language = language
+        self.suggestedFileName = suggestedFileName
+        self.body = body.hasSuffix("\n") ? body : body + "\n"
+    }
+
+    public func snippet(pluginID: String) -> Snippet {
+        Snippet(
+            id: "plugin.\(pluginID).\(id)",
+            title: title,
+            summary: summary,
+            language: language,
+            suggestedFileName: suggestedFileName,
+            body: body
+        )
+    }
+}
+
 public struct StudioPluginManifest: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var name: String
@@ -61,6 +97,7 @@ public struct StudioPluginManifest: Codable, Equatable, Sendable, Identifiable {
     public var systemImage: String
     public var scopes: [PluginScope]
     public var actions: [PluginAction]
+    public var snippets: [PluginSnippet]
 
     public init(
         id: String,
@@ -70,7 +107,8 @@ public struct StudioPluginManifest: Codable, Equatable, Sendable, Identifiable {
         summary: String = "",
         systemImage: String = "puzzlepiece.extension",
         scopes: [PluginScope] = [.global],
-        actions: [PluginAction] = []
+        actions: [PluginAction] = [],
+        snippets: [PluginSnippet] = []
     ) {
         self.id = id
         self.name = name
@@ -80,10 +118,11 @@ public struct StudioPluginManifest: Codable, Equatable, Sendable, Identifiable {
         self.systemImage = systemImage
         self.scopes = scopes
         self.actions = actions
+        self.snippets = snippets
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, version, author, summary, systemImage, scopes, actions
+        case id, name, version, author, summary, systemImage, scopes, actions, snippets
     }
 
     public init(from decoder: Decoder) throws {
@@ -96,6 +135,7 @@ public struct StudioPluginManifest: Codable, Equatable, Sendable, Identifiable {
         systemImage = try c.decodeIfPresent(String.self, forKey: .systemImage) ?? "puzzlepiece.extension"
         scopes = try c.decodeIfPresent([PluginScope].self, forKey: .scopes) ?? [.global]
         actions = try c.decodeIfPresent([PluginAction].self, forKey: .actions) ?? []
+        snippets = try c.decodeIfPresent([PluginSnippet].self, forKey: .snippets) ?? []
     }
 }
 
@@ -107,6 +147,25 @@ public enum PluginManifestValidator {
         }
         if manifest.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             issues.append("Plugin name is required.")
+        }
+
+        var snippetIDs = Set<String>()
+        for snippet in manifest.snippets {
+            if !validIdentifier(snippet.id) {
+                issues.append("Snippet id '\(snippet.id)' is invalid.")
+            }
+            if !snippetIDs.insert(snippet.id).inserted {
+                issues.append("Snippet id '\(snippet.id)' is duplicated.")
+            }
+            if snippet.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                issues.append("Snippet '\(snippet.id)' needs a title.")
+            }
+            if snippet.suggestedFileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                issues.append("Snippet '\(snippet.id)' needs a suggested file name.")
+            }
+            if snippet.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                issues.append("Snippet '\(snippet.id)' has an empty body.")
+            }
         }
 
         var actionIDs = Set<String>()
