@@ -66,6 +66,11 @@ struct ProjectDetailView: View {
                         Label("Work on this with the assistant", systemImage: "sparkles")
                     }
                     Button {
+                        exportArchive()
+                    } label: {
+                        Label("Export the project as a .tar.gz", systemImage: "archivebox")
+                    }
+                    Button {
                         isShowingInstalled = true
                     } label: {
                         Label("Installed packages", systemImage: "shippingbox")
@@ -392,6 +397,11 @@ struct ProjectDetailView: View {
         }
     }
 
+    private var builtPackageCount: Int? {
+        let count = PublishService.artifacts(project: current).count
+        return count == 0 ? nil : count
+    }
+
     private var launchTargets: [LaunchTarget] {
         let makefile = FS.read(current.path + "/Makefile") ?? ""
         let filterName = current.path + "/" + current.name + ".plist"
@@ -439,6 +449,18 @@ struct ProjectDetailView: View {
         Section {
             NavigationLink(destination: HeaderSearchView(store: store, project: current)) {
                 Label("Find a hook", systemImage: "magnifyingglass")
+            }
+            NavigationLink(destination: ProjectSearchView(store: store, project: current)) {
+                Label("Find in project", systemImage: "text.magnifyingglass")
+            }
+            NavigationLink(destination: ArtifactsView(store: store, project: current)) {
+                HStack {
+                    Label("Built packages", systemImage: "shippingbox")
+                    Spacer()
+                    if let count = builtPackageCount, count > 0 {
+                        Text("\(count)").font(.footnote).foregroundColor(.secondary)
+                    }
+                }
             }
             NavigationLink(destination: SourceControlView(store: store, project: current)) {
                 Label("Source control", systemImage: "arrow.triangle.branch")
@@ -524,6 +546,37 @@ struct ProjectDetailView: View {
         reload()
         if !outcome.notes.isEmpty || !outcome.warnings.isEmpty {
             toolOutcome = outcome
+        }
+    }
+
+    /// A backup before a risky change, and the way to move a project to another
+    /// device or into a git repository somewhere else.
+    private func exportArchive() {
+        let name = current.name
+        let parent = (current.path as NSString).deletingLastPathComponent
+        let destination = NSTemporaryDirectory() + "/\(name).tar.gz"
+        guard let tar = store.toolPaths(for: ["tar"])["tar"] else {
+            store.banner = BannerMessage(title: "tar is not installed", body: "The archive needs the tar binary, which comes with coreutils.")
+            return
+        }
+        try? FS.remove(destination)
+        let process = ShellProcess(
+            executable: tar,
+            arguments: ["-czf", destination, "-C", parent, name],
+            environment: store.commandEnvironment()
+        )
+        do {
+            try process.run(onLine: { _ in }, onExit: { _ in
+                DispatchQueue.main.async {
+                    guard FS.fileExists(destination) else {
+                        store.banner = BannerMessage(title: "Could not build the archive", body: "tar did not produce \(destination).")
+                        return
+                    }
+                    UIApplication.shared.share(URL(fileURLWithPath: destination))
+                }
+            })
+        } catch {
+            store.banner = BannerMessage(title: "Could not run tar", body: error.localizedDescription)
         }
     }
 

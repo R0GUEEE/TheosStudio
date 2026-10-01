@@ -41,6 +41,9 @@ struct NewProjectView: View {
     @State private var summary = "A Theos project built on device."
     @State private var minimumIOS = "15.0"
     @State private var lastError: String?
+    @State private var cloneURL = ""
+    @State private var isCloning = false
+    @State private var cloneLog: [String] = []
 
     private var scheme: PackagingScheme {
         schemeChoice.scheme ?? store.jailbreak.scheme
@@ -76,6 +79,31 @@ struct NewProjectView: View {
     var body: some View {
         NavigationView {
             Form {
+                Section {
+                    TextField("https://github.com/user/tweak.git", text: $cloneURL)
+                        .font(.system(size: 12, design: .monospaced))
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                        .keyboardType(.URL)
+                    Button {
+                        clone()
+                    } label: {
+                        if isCloning {
+                            HStack { ProgressView().scaleEffect(0.7); Text("Cloning…") }
+                        } else {
+                            Label("Clone it", systemImage: "arrow.down.circle")
+                        }
+                    }
+                    .disabled(isCloning || cloneURL.trimmingCharacters(in: .whitespaces).isEmpty)
+                    if !cloneLog.isEmpty {
+                        ConsoleText(lines: cloneLog).frame(height: 140).cornerRadius(8)
+                    }
+                } header: {
+                    Text("From a Git repository")
+                } footer: {
+                    Text("For starting from someone else's tweak, or your own. The repository is cloned with its submodules into the projects folder and opens with everything the app already knows, because a Theos project is just files.")
+                }
+
                 Section {
                     Picker("Kind", selection: $kind) {
                         ForEach(ProjectKind.allCases, id: \.self) { kind in
@@ -200,6 +228,60 @@ struct NewProjectView: View {
         .onAppear {
             authorName = store.settings.authorName
             authorEmail = store.settings.authorEmail
+        }
+    }
+
+    /// Cloning here rather than in a terminal because the interesting part is
+    /// what happens after: the project is picked up by the same list, editor,
+    /// build and assistant as anything created from a template.
+    private func clone() {
+        let url = cloneURL.trimmingCharacters(in: .whitespaces)
+        guard !url.isEmpty else { return }
+        guard let git = store.toolPaths(for: ["git"])["git"] else {
+            lastError = "git is not installed on this device, so the app cannot clone anything."
+            return
+        }
+
+        // The folder name comes from the URL, which is what everyone expects; a
+        // URL ending in .git loses that suffix.
+        var name = (url as NSString).lastPathComponent
+        if name.hasSuffix(".git") { name = String(name.dropLast(4)) }
+        name = ProjectNaming.sanitize(name)
+        let destination = store.settings.projectsDirectory + "/" + name
+
+        guard !FS.directoryExists(destination) else {
+            lastError = "There is already something at \(destination). Pick another name by renaming the repository on disk first."
+            return
+        }
+
+        isCloning = true
+        cloneLog = ["$ git clone --recursive \(url) \(name)"]
+        lastError = nil
+        let process = ShellProcess(
+            executable: git,
+            arguments: ["clone", "--recursive", url, destination],
+            environment: store.commandEnvironment()
+        )
+        do {
+            try process.run(onLine: { line in
+                cloneLog.append(line)
+                if cloneLog.count > 400 { cloneLog.removeFirst() }
+            }, onExit: { outcome in
+                DispatchQueue.main.async {
+                    isCloning = false
+                    guard outcome.status == 0 else {
+                        cloneLog.append("— exit \(outcome.status)")
+                        lastError = "The clone failed. The output above is git's own; the usual causes are a private repository and no credentials on this device."
+                        return
+                    }
+                    store.reloadProjects()
+                    store.settings.lastProjectPath = destination
+                    isPresented = false
+                }
+            })
+        } catch {
+            isCloning = false
+            lastError = error.localizedDescription
         }
     }
 

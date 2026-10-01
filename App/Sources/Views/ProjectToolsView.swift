@@ -170,6 +170,8 @@ struct PackageInspectionView: View {
     @State private var rows: [DebSummaryRow] = []
     @State private var entries: [DebEntry] = []
     @State private var listingError: String?
+    @State private var missingDependencies: [DependencyGroup] = []
+    @State private var checkedDependencies = false
 
     var body: some View {
         List {
@@ -185,6 +187,32 @@ struct PackageInspectionView: View {
                 }
             } header: {
                 Text("Package")
+            }
+
+            if checkedDependencies {
+                Section {
+                    if missingDependencies.isEmpty {
+                        Label("Every dependency is installed", systemImage: "checkmark.seal.fill")
+                            .font(.footnote)
+                            .foregroundColor(.green)
+                    } else {
+                        ForEach(Array(missingDependencies.enumerated()), id: \.offset) { _, group in
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(group.display).font(.system(size: 12, design: .monospaced))
+                                    Text("Not installed — nothing this package depends on is present.")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Dependencies")
+                } footer: {
+                    Text("dpkg installs a package with unmet dependencies and reports nothing later; the tweak then sits there doing nothing. Install the missing packages from Sileo first.")
+                }
             }
 
             if !entries.isEmpty {
@@ -235,6 +263,9 @@ struct PackageInspectionView: View {
         let controlText = await DpkgService.control(debPath: debPath, store: store)?.output ?? ""
         let control = ControlFile.parse(controlText)
         rows = DebListing.summary(entries: entries, control: control, scheme: project.scheme ?? .rootless)
+
+        missingDependencies = await PublishService.missingDependencies(debPath: debPath, store: store)
+        checkedDependencies = true
     }
 }
 
