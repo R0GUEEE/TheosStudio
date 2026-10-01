@@ -161,7 +161,9 @@ public enum TheosInstaller {
 
         let destination = options.destination
         let theosMakefiles = destination + "/makefiles/common.mk"
-        let cloned = toolPaths["git"] != nil
+        // Reported through `require` so a missing git names itself in
+        // missingTools and in the warnings, exactly like the other tools.
+        let cloned = require("git", because: "Theos itself")
 
         if require("mkdir", because: "the Theos directory") {
             steps.append(InstallStep(
