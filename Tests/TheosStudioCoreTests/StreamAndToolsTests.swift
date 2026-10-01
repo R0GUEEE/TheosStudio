@@ -342,6 +342,20 @@ final class AgentExtraBodyTests: XCTestCase {
         XCTAssertEqual((object["messages"] as? [[String: Any]])?.count, 1)
     }
 
+    func testTheStreamFlagIsOnlySentWhenAskedFor() throws {
+        let request = AgentRequest(model: "m", messages: [.user("hi")], stream: true)
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try JSONEncoder().encode(request)) as? [String: Any]
+        )
+        XCTAssertEqual(object["stream"] as? Bool, true)
+
+        request.stream = nil
+        object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try JSONEncoder().encode(request)) as? [String: Any]
+        )
+        XCTAssertNil(object["stream"], "the default is whatever the provider does")
+    }
+
     func testNoExtrasMeansNoExtraKeys() throws {
         let request = AgentRequest(model: "m", messages: [.user("hi")])
         let object = try XCTUnwrap(

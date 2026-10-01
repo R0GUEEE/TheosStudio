@@ -300,6 +300,9 @@ final class AgentSession: ObservableObject {
     @Published private(set) var entries: [Entry] = []
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var pendingApproval: Approval?
+    /// The reply as it is being written. Shown instead of a spinner, because half
+    /// a minute of spinner is the difference between "working" and "hung".
+    @Published private(set) var streamingText: String?
 
     private let client = AgentClient()
     private var history: [AgentMessage] = []
@@ -325,6 +328,7 @@ final class AgentSession: ObservableObject {
 
     func reset() {
         task?.cancel()
+        streamingText = nil
         entries = []
         history = []
         batch = []
@@ -348,6 +352,7 @@ final class AgentSession: ObservableObject {
     func stop() {
         task?.cancel()
         task = nil
+        streamingText = nil
         batch = []
         awaiting = nil
         pendingApproval = nil
@@ -397,13 +402,9 @@ final class AgentSession: ObservableObject {
         guard let environment else { return }
         while !Task.isCancelled {
             phase = .thinking
+            streamingText = nil
             do {
-                let reply = try await client.send(
-                    messages: buildMessages(),
-                    settings: settings,
-                    apiKey: apiKey,
-                    tools: enabledToolList
-                )
+                let reply = try await replyMessage()
                 history.append(reply)
 
                 if let content = reply.content?.trimmingCharacters(in: .whitespacesAndNewlines), !content.isEmpty {
@@ -423,6 +424,7 @@ final class AgentSession: ObservableObject {
                     return
                 }
             } catch {
+                streamingText = nil
                 if Task.isCancelled { phase = .idle; return }
                 let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                 entries.append(Entry(kind: .error, text: message))
@@ -507,6 +509,44 @@ final class AgentSession: ObservableObject {
             lastBuildSummary = text
         }
         entries.append(Entry(kind: .result, title: action.summary, text: text))
+    }
+
+    /// One round trip, streamed when the setting says so.
+    private func replyMessage() async throws -> AgentMessage {
+        let messages = buildMessages()
+        guard settings.streamsResponses else {
+            return try await client.send(
+                messages: messages,
+                settings: settings,
+                apiKey: apiKey,
+                tools: enabledToolList
+            )
+        }
+
+        // A failure reported mid-stream arrives as an event, not as a thrown
+        // error, so it is carried out of the closure and thrown after.
+        var streamFailure: String?
+        let message = try await client.stream(
+            messages: messages,
+            settings: settings,
+            apiKey: apiKey,
+            tools: enabledToolList,
+            onEvent: { event in
+                switch event {
+                case .text(let piece):
+                    self.streamingText = (self.streamingText ?? "") + piece
+                case .failed(let message):
+                    streamFailure = message
+                case .finished, .toolCallDelta:
+                    break
+                }
+            }
+        )
+        streamingText = nil
+        if let streamFailure {
+            throw AgentClient.Failure.http(status: 200, body: streamFailure)
+        }
+        return message
     }
 
     /// Only the tools the user left switched on.

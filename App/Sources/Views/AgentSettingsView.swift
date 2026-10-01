@@ -390,10 +390,24 @@ struct AgentSettingsView: View {
                      ? "Max reply length: the provider's default"
                      : "Max reply length: \(store.agent.maxTokens) tokens")
             }
+
+            Toggle("Read the reply as it is written", isOn: $store.agent.streamsResponses)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Extra request fields (JSON)").font(.footnote).foregroundColor(.secondary)
+                TextEditor(text: $store.agent.extraBodyJSON)
+                    .font(.system(size: 12, design: .monospaced))
+                    .frame(minHeight: 70)
+                if !store.agent.extraBodyIsValid {
+                    Text("Not valid JSON, so nothing extra is sent. It should be an object, e.g. {\"reasoning_effort\": \"low\"}.")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+            }
         } header: {
             Text("Context and length")
         } footer: {
-            Text("A provider whose default reply length is small can cut a tool call off mid-argument, which looks like broken JSON. Setting a limit here is the fix.")
+            Text("A provider whose default reply length is small can cut a tool call off mid-argument, which looks like broken JSON — a limit here is the fix. Extra fields are merged into the request body for parameters only one gateway understands (OpenRouter routing, a reasoning budget); a malformed object is ignored rather than sent.")
         }
     }
 

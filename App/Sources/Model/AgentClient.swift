@@ -94,6 +94,87 @@ final class AgentClient {
         return message
     }
 
+    /// Sends the conversation and reports the reply as it is written.
+    ///
+    /// Falls back to reading a whole response when the gateway answers with a
+    /// plain completion instead of a stream, and when the content type says it is
+    /// not a stream at all — a provider that ignores `stream: true` must not look
+    /// like an empty reply.
+    func stream(
+        messages: [AgentMessage],
+        settings: AgentSettings,
+        apiKey: String,
+        tools: [AgentTool],
+        onEvent: @escaping @MainActor (AgentStreamEvent) -> Void
+    ) async throws -> AgentMessage {
+        guard settings.isConfigured, let endpoint = settings.endpoint else {
+            throw Failure.notConfigured
+        }
+
+        let request = AgentRequest(
+            model: settings.model,
+            messages: messages,
+            tools: tools,
+            toolChoice: "auto",
+            temperature: settings.temperature,
+            maxTokens: settings.maxTokens > 0 ? settings.maxTokens : nil,
+            extraBody: settings.decodedExtraBody,
+            stream: true
+        )
+
+        var urlRequest = URLRequest(url: endpoint)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        if !apiKey.isEmpty {
+            urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        urlRequest.httpBody = try JSONEncoder().encode(request)
+
+        let bytes: URLSession.AsyncBytes
+        let response: URLResponse
+        do {
+            (bytes, response) = try await session.bytes(for: urlRequest)
+        } catch {
+            throw Failure.transport(error.localizedDescription)
+        }
+
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            var body = ""
+            for try await line in bytes.lines {
+                body += line
+                if body.count > 600 { break }
+            }
+            throw Failure.http(status: http.statusCode, body: body)
+        }
+
+        var decoder = AgentStreamDecoder()
+        let contentType = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? ""
+
+        if contentType.contains("event-stream") {
+            for try await line in bytes.lines {
+                for event in decoder.consume(line: line) {
+                    await MainActor.run { onEvent(event) }
+                }
+            }
+        } else {
+            // Not a stream after all: read it as one response.
+            var body = ""
+            for try await line in bytes.lines {
+                body += line + "\n"
+            }
+            for event in decoder.consume(body: body) {
+                await MainActor.run { onEvent(event) }
+            }
+        }
+
+        let message = decoder.message()
+        guard message.content != nil || !message.toolCalls.isEmpty else {
+            throw Failure.malformed("the stream contained no text and no tool calls")
+        }
+        return message
+    }
+
     /// `GET /models`, filtered to the models that can hold a conversation.
     ///
     /// This is what makes the model field a picker instead of a guess: every

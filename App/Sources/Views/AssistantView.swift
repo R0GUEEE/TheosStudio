@@ -216,6 +216,14 @@ struct AssistantView: View {
                     ForEach(session.entries) { entry in
                         TranscriptRow(entry: entry).id(entry.id)
                     }
+                    if let streaming = session.streamingText, !streaming.isEmpty {
+                        Text(streaming)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(.secondarySystemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .id("streaming")
+                    }
                     if let approval = session.pendingApproval {
                         ApprovalCard(
                             approval: approval,
@@ -231,6 +239,10 @@ struct AssistantView: View {
             .onChange(of: session.entries.count) { _ in
                 guard let last = session.entries.last else { return }
                 withAnimation(.linear(duration: 0.15)) { proxy.scrollTo(last.id, anchor: .bottom) }
+            }
+            .onChange(of: session.streamingText) { text in
+                guard text != nil else { return }
+                proxy.scrollTo("streaming", anchor: .bottom)
             }
             .onChange(of: session.pendingApproval?.id) { _ in
                 guard session.pendingApproval != nil else { return }

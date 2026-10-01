@@ -34,6 +34,11 @@ struct AgentSettings: Codable, Equatable {
     var contextBudget: Int = 60_000
     /// Left at 0 to let the provider decide.
     var maxTokens: Int = 0
+    /// Read the reply as it is written. Turn it off for a gateway that mishandles
+    /// streaming.
+    var streamsResponses: Bool = true
+    /// Extra request fields, as JSON text.
+    var extraBodyJSON: String = ""
     var runtimes: [String: ProviderRuntime] = [:]
 
     init() {}
@@ -65,6 +70,22 @@ struct AgentSettings: Codable, Equatable {
     }
 
     var contextModeOrDefault: AgentContextMode { contextMode }
+
+    /// The parsed extra fields, or nil when there are none or they are not valid
+    /// JSON — in which case the app sends the request without them rather than
+    /// failing the turn.
+    var decodedExtraBody: [String: JSONValue]? {
+        let text = extraBodyJSON.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, let data = text.data(using: .utf8) else { return nil }
+        guard let object = try? JSONDecoder().decode([String: JSONValue].self, from: data) else { return nil }
+        return object.isEmpty ? nil : object
+    }
+
+    var extraBodyIsValid: Bool {
+        let text = extraBodyJSON.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.isEmpty { return true }
+        return decodedExtraBody != nil
+    }
 
     var isConfigured: Bool {
         !trimmedBase.isEmpty && !model.trimmingCharacters(in: .whitespaces).isEmpty
@@ -104,6 +125,7 @@ struct AgentSettings: Codable, Equatable {
         case providerID, baseURL, model, temperature, extraInstructions
         case maxToolCallsPerTurn, runtimes
         case approvals, preferences, enabledTools, contextMode, contextBudget, maxTokens
+        case streamsResponses, extraBodyJSON
     }
 
     /// Hand-written so that settings written by an older version still load: a
@@ -130,6 +152,8 @@ struct AgentSettings: Codable, Equatable {
         contextMode = value(.contextMode, .fullFiles)
         contextBudget = value(.contextBudget, 60_000)
         maxTokens = value(.maxTokens, 0)
+        streamsResponses = value(.streamsResponses, true)
+        extraBodyJSON = value(.extraBodyJSON, "")
     }
 }
 

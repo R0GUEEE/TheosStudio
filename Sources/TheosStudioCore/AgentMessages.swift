@@ -243,6 +243,9 @@ public struct AgentRequest: Encodable, Sendable {
     /// understands (routing hints, reasoning budget, provider order). Written
     /// first, so the fields above always win over a typo in here.
     public var extraBody: [String: JSONValue]?
+    /// Ask for the reply as it is written. A gateway that ignores it answers with
+    /// a plain completion, which is read as one chunk.
+    public var stream: Bool?
 
     public init(
         model: String,
@@ -251,7 +254,8 @@ public struct AgentRequest: Encodable, Sendable {
         toolChoice: String? = nil,
         temperature: Double? = nil,
         maxTokens: Int? = nil,
-        extraBody: [String: JSONValue]? = nil
+        extraBody: [String: JSONValue]? = nil,
+        stream: Bool? = nil
     ) {
         self.model = model
         self.messages = messages
@@ -260,6 +264,7 @@ public struct AgentRequest: Encodable, Sendable {
         self.temperature = temperature
         self.maxTokens = maxTokens
         self.extraBody = extraBody
+        self.stream = stream
     }
 
     /// One key type for everything: a keyed container is typed by its key, so a
@@ -291,6 +296,9 @@ public struct AgentRequest: Encodable, Sendable {
         try container.encodeIfPresent(temperature, forKey: AnyKey(stringValue: "temperature"))
         if let maxTokens, maxTokens > 0 {
             try container.encode(maxTokens, forKey: AnyKey(stringValue: "max_tokens"))
+        }
+        if let stream {
+            try container.encode(stream, forKey: AnyKey(stringValue: "stream"))
         }
     }
 }

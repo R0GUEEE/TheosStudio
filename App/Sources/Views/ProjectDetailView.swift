@@ -15,6 +15,7 @@ struct ProjectDetailView: View {
     @State private var renamingEntry: ProjectEntry?
     @State private var deletingEntry: ProjectEntry?
     @State private var toolOutcome: ProjectFileEditor.Outcome?
+    @State private var testFlow: String?
 
     init(store: StudioStore, project: Project) {
         _store = ObservedObject(wrappedValue: store)
@@ -453,6 +454,14 @@ struct ProjectDetailView: View {
             NavigationLink(destination: ProjectSearchView(store: store, project: current)) {
                 Label("Find in project", systemImage: "text.magnifyingglass")
             }
+            NavigationLink(destination: MakefileSettingsView(store: store, project: current)) {
+                Label("Build settings", systemImage: "slider.horizontal.3")
+            }
+            if current.kind?.usesInjectionFilter ?? true {
+                NavigationLink(destination: InjectionFilterView(store: store, project: current)) {
+                    Label("Injection filter", systemImage: "line.3.horizontal.decrease.circle")
+                }
+            }
             NavigationLink(destination: ArtifactsView(store: store, project: current)) {
                 HStack {
                     Label("Built packages", systemImage: "shippingbox")
@@ -541,6 +550,65 @@ struct ProjectDetailView: View {
     }
 
     // MARK: - File actions
+
+    /// The loop you actually run: build it, put it on the device, and restart the
+    /// thing it hooks. Doing it in one tap is the difference between testing a
+    /// change and deciding to test it later.
+    private func buildInstallAndTest() {
+        guard !runner.phase.isRunning, !installer.phase.isRunning else { return }
+        testFlow = "Building…"
+
+        Task {
+            let outcome = await withCheckedContinuation { continuation in
+                var resumed = false
+                runner.onOutcome = { outcome in
+                    guard !resumed else { return }
+                    resumed = true
+                    continuation.resume(returning: outcome)
+                }
+                runner.build(project: current, store: store)
+            }
+
+            guard outcome.succeeded else {
+                testFlow = nil
+                store.banner = BannerMessage(title: "The build failed", body: "The console has the compiler's output, and the problems list has the errors with their lines.")
+                return
+            }
+            guard let artifact = outcome.artifact else {
+                testFlow = nil
+                store.banner = BannerMessage(title: "Nothing to install", body: "The build finished but produced no package.")
+                return
+            }
+
+            testFlow = "Installing…"
+            let installed = await withCheckedContinuation { continuation in
+                var resumed = false
+                installer.onResult = { ok, message in
+                    guard !resumed else { return }
+                    resumed = true
+                    continuation.resume(returning: (ok, message))
+                }
+                installer.install(debPath: artifact, store: store)
+            }
+            guard installed.0 else {
+                testFlow = nil
+                store.banner = BannerMessage(title: "The install failed", body: installed.1)
+                return
+            }
+
+            // The target from the project's own Makefile and filter, so a hook
+            // inside an app is tested without a respring.
+            if let target = launchTargets.first?.name {
+                testFlow = "Restarting \(target)…"
+                installer.restart(target, store: store)
+            } else {
+                testFlow = "Respringing…"
+                installer.respring(store: store)
+            }
+            testFlow = nil
+            reload()
+        }
+    }
 
     private func apply(_ outcome: ProjectFileEditor.Outcome) {
         reload()
