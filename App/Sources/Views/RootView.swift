@@ -18,6 +18,7 @@ struct TheosStudioApp: App {
 struct RootView: View {
 
     @ObservedObject var store: StudioStore
+    @StateObject private var plugins = PluginManager()
     @State private var selection = 0
 
     var body: some View {
@@ -31,10 +32,14 @@ struct RootView: View {
             ToolchainView(store: store)
                 .tabItem { Label("Toolchain", systemImage: "wrench.and.screwdriver") }
                 .tag(2)
+            PluginCenterView(store: store)
+                .tabItem { Label("Plugins", systemImage: "puzzlepiece.extension") }
+                .tag(3)
             SettingsView(store: store)
                 .tabItem { Label("Settings", systemImage: "gearshape") }
-                .tag(3)
+                .tag(4)
         }
+        .environmentObject(plugins)
         .alert(item: $store.banner) { message in
             Alert(
                 title: Text(message.title),
@@ -46,6 +51,7 @@ struct RootView: View {
             store.refreshToolchain()
             store.probePrivileges()
             store.reloadProjects()
+            plugins.reload()
         }
     }
 }
