@@ -36,6 +36,7 @@ struct ProjectDetailView: View {
 
     var body: some View {
         List {
+            projectHeroSection
             projectSection
             filesSection
             buildSection
@@ -144,6 +145,65 @@ struct ProjectDetailView: View {
     }
 
     // MARK: - Sections
+
+    private var projectHeroSection: some View {
+        Section {
+            StudioCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(StudioUI.schemeColor(current.displayScheme).opacity(0.12))
+                            Image(systemName: current.builtPackage == nil ? "hammer.fill" : "checkmark.seal.fill")
+                                .font(.title2)
+                                .foregroundColor(current.builtPackage == nil ? .accentColor : .green)
+                        }
+                        .frame(width: 52, height: 52)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(current.name)
+                                .font(.title3.weight(.bold))
+                            Text(current.packageIdentifier ?? "No package identifier")
+                                .font(.caption.monospaced())
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                            HStack(spacing: 6) {
+                                StatusChip(text: current.displayScheme, color: StudioUI.schemeColor(current.displayScheme))
+                                if let version = current.version {
+                                    StatusChip(text: "v\(version)", color: .secondary)
+                                }
+                            }
+                        }
+                        Spacer()
+                    }
+
+                    HStack(spacing: 8) {
+                        Button {
+                            installAfterBuild = false
+                            runner.build(project: current, store: store)
+                        } label: {
+                            Label("Build", systemImage: "hammer.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(runner.phase.isRunning)
+
+                        Button {
+                            installAfterBuild = true
+                            runner.build(project: current, store: store)
+                        } label: {
+                            Label("Build & Install", systemImage: "arrow.down.circle.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(runner.phase.isRunning)
+                    }
+                }
+            }
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+            .listRowBackground(Color.clear)
+        }
+    }
 
     private var projectSection: some View {
         Section {
@@ -453,6 +513,9 @@ struct ProjectDetailView: View {
             }
             NavigationLink(destination: ProjectSearchView(store: store, project: current)) {
                 Label("Find in project", systemImage: "text.magnifyingglass")
+            }
+            NavigationLink(destination: ProjectInsightsView(project: current)) {
+                Label("Project insights", systemImage: "chart.bar.doc.horizontal")
             }
             NavigationLink(destination: MakefileSettingsView(store: store, project: current)) {
                 Label("Build settings", systemImage: "slider.horizontal.3")

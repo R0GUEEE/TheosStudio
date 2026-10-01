@@ -35,6 +35,7 @@ struct RootView: View {
                 .tabItem { Label("Settings", systemImage: "gearshape") }
                 .tag(3)
         }
+        .tint(.indigo)
         .alert(item: $store.banner) { message in
             Alert(
                 title: Text(message.title),
@@ -81,10 +82,11 @@ struct StatusChip: View {
         Text(text)
             .font(.caption2.weight(.semibold))
             .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.15))
+            .padding(.vertical, 4)
+            .background(color.opacity(0.12))
             .foregroundColor(color)
             .clipShape(Capsule())
+            .overlay(Capsule().stroke(color.opacity(0.18), lineWidth: 0.5))
     }
 }
 

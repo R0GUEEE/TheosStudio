@@ -32,6 +32,33 @@ struct SettingsView: View {
         NavigationView {
             Form {
                 Section {
+                    StudioCard {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill((store.isReadyToBuild ? Color.green : Color.orange).opacity(0.12))
+                                Image(systemName: store.isReadyToBuild ? "checkmark.seal.fill" : "wrench.and.screwdriver.fill")
+                                    .font(.title2)
+                                    .foregroundColor(store.isReadyToBuild ? .green : .orange)
+                            }
+                            .frame(width: 50, height: 50)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("TheosStudio").font(.headline)
+                                Text(store.isReadyToBuild ? "Toolchain ready" : "Toolchain needs attention")
+                                    .font(.caption)
+                                    .foregroundColor(store.isReadyToBuild ? .green : .orange)
+                                Text("Version \(Self.appVersion)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+                    .listRowBackground(Color.clear)
+                }
+
+                Section {
                     TextField("Folder", text: $store.settings.projectsDirectory)
                         .font(.system(size: 12, design: .monospaced))
                         .autocapitalization(.none)

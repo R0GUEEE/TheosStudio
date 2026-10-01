@@ -65,7 +65,10 @@ struct CodeEditorView: View {
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Save", action: save).disabled(!isModified)
+                Button(action: save) {
+                    Label(isModified ? "Save" : "Saved", systemImage: isModified ? "square.and.arrow.down.fill" : "checkmark.circle")
+                }
+                .disabled(!isModified)
             }
         }
         .sheet(isPresented: $isFinding) {
@@ -134,20 +137,23 @@ struct CodeEditorView: View {
     }
 
     private var statusBar: some View {
-        HStack(spacing: 12) {
-            Text(languageName)
-            Spacer()
-            Text("\(text.split(separator: "\n", omittingEmptySubsequences: false).count) lines")
-            Text("\(text.utf8.count) bytes")
-            if isModified {
-                Text("modified").foregroundColor(.orange)
+        HStack(spacing: 10) {
+            HStack(spacing: 5) {
+                StudioStatusDot(color: isModified ? .orange : .green)
+                Text(isModified ? "Modified" : "Saved")
             }
+            Spacer()
+            Label(languageName, systemImage: "chevron.left.forwardslash.chevron.right")
+                .lineLimit(1)
+            Text("\(text.split(separator: "\n", omittingEmptySubsequences: false).count)L")
+                .monospacedDigit()
+            Text(ByteCountFormatter.string(fromByteCount: Int64(text.utf8.count), countStyle: .file))
         }
-        .font(.caption)
+        .font(.caption2)
         .foregroundColor(.secondary)
-        .padding(.horizontal)
-        .padding(.vertical, 6)
-        .background(Color(.secondarySystemBackground))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
     }
 }
 

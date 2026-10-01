@@ -11,6 +11,8 @@ struct BuildConsoleView: View {
     var body: some View {
         VStack(spacing: 0) {
             summary
+                .padding(12)
+                .background(Color(.secondarySystemGroupedBackground))
             Divider()
             ScrollViewReader { proxy in
                 ScrollView {
@@ -26,7 +28,7 @@ struct BuildConsoleView: View {
                     }
                     .padding(8)
                 }
-                .background(Color(.systemBackground))
+                .background(Color(.systemGroupedBackground))
                 .onChange(of: runner.lines.count) { count in
                     guard count > 0, let last = runner.lines.last else { return }
                     withAnimation(.linear(duration: 0.1)) {
@@ -59,9 +61,11 @@ struct BuildConsoleView: View {
 
     @ViewBuilder
     private var summary: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(phaseText).font(.subheadline.weight(.medium))
+        StudioCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    StudioStatusDot(color: phaseColor)
+                    Text(phaseText).font(.subheadline.weight(.semibold))
                 Spacer()
                 if runner.errorCount > 0 {
                     StatusChip(text: "\(runner.errorCount) error\(runner.errorCount == 1 ? "" : "s")", color: .red)
@@ -83,10 +87,18 @@ struct BuildConsoleView: View {
                 }
                 .buttonStyle(.bordered)
             }
+            }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground))
+    }
+
+    private var phaseColor: Color {
+        switch runner.phase {
+        case .idle: return .secondary
+        case .running: return .blue
+        case .succeeded: return .green
+        case .failed: return .red
+        case .cancelled: return .orange
+        }
     }
 
     private var phaseText: String {
