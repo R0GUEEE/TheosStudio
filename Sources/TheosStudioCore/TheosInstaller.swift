@@ -173,7 +173,7 @@ public enum TheosInstaller {
 
         if options.scope == .dependenciesOnly || options.scope == .theosAndSDK {
             if privileges.canEscalate {
-                if require("apt-get", because: "the dependency packages") {
+                if require("apt-get", "the dependency packages") {
                     let packages = options.procursus ? ["theos-dependencies"] : dependencyPackages
                     steps.append(InstallStep(
                         label: "Updating package lists",
@@ -225,7 +225,7 @@ public enum TheosInstaller {
     private static func theosSteps(
         destination: String,
         toolPaths: [String: String],
-        require: (_ tool: String, because reason: String) -> Bool,
+        require: (_ tool: String, _ reason: String) -> Bool,
         warnings: inout [String],
         exists: (String) -> Bool,
         listDirectory: (String) -> [String]
@@ -236,7 +236,7 @@ public enum TheosInstaller {
         let alreadyThere = exists(makefiles)
         let entries = listDirectory(destination)
 
-        if require("mkdir", because: "the Theos directory") {
+        if require("mkdir", "the Theos directory") {
             steps.append(InstallStep(
                 label: "Create \(destination)",
                 kind: .command(tool: "mkdir", arguments: ["-p", destination]),
@@ -269,7 +269,7 @@ public enum TheosInstaller {
             return steps
         }
 
-        guard require("git", because: "cloning Theos") else { return steps }
+        guard require("git", "cloning Theos") else { return steps }
         steps.append(InstallStep(
             label: "Clone Theos",
             kind: .command(tool: "git", arguments: ["clone", "--recursive", repository, destination]),
@@ -290,7 +290,7 @@ public enum TheosInstaller {
         destination: String,
         asset: SDKAsset?,
         toolPaths: [String: String],
-        require: (_ tool: String, because reason: String) -> Bool,
+        require: (_ tool: String, _ reason: String) -> Bool,
         warnings: inout [String]
     ) -> [InstallStep] {
         guard let asset else {
@@ -303,7 +303,7 @@ public enum TheosInstaller {
         let archive = sdkDirectory + "/." + asset.name + ".tar.xz"
         let installed = sdkDirectory + "/" + asset.name
 
-        if require("mkdir", because: "the SDK directory") {
+        if require("mkdir", "the SDK directory") {
             steps.append(InstallStep(
                 label: "Create \(sdkDirectory)",
                 kind: .command(tool: "mkdir", arguments: ["-p", sdkDirectory]),
@@ -319,7 +319,7 @@ public enum TheosInstaller {
             note: "A patched SDK from theos/sdks, the same release the official installer uses."
         ))
 
-        if require("tar", because: "unpacking the SDK") {
+        if require("tar", "unpacking the SDK") {
             steps.append(InstallStep(
                 label: "Unpack \(asset.name)",
                 kind: .command(tool: "tar", arguments: ["-xJf", archive, "-C", sdkDirectory]),
