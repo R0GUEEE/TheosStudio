@@ -113,72 +113,136 @@ struct AgentSettings: Codable, Equatable {
     }
 }
 
-/// API keys, one per provider, in the keychain.
+/// The API keys, one per provider.
 ///
-/// Not in the settings file: a settings file is copied by backup tools and shown
-/// by anything that can read the app's container, and this is the one value in the
-/// app that is worth stealing. The account is scoped by provider so switching
-/// providers does not overwrite the key you already typed.
-enum AgentKeychain {
+/// The keychain is the right place for them, but an ad-hoc signed app can be
+/// refused by securityd (`errSecMissingEntitlement`, -34018, unless the app
+/// carries an application-identifier and a keychain-access-group). A store that
+/// fails silently is worse than one that cannot store at all, so this keeps a
+/// fallback in the app's own folder, reports which one it used, and never
+/// pretends a key was saved when it was not.
+enum AgentKeyStore {
+
+    enum Storage: Equatable {
+        case keychain
+        /// Kept in the app's folder because the keychain refused it.
+        case file(path: String, reason: String)
+        case missing
+
+        var label: String {
+            switch self {
+            case .keychain:
+                return "Kept in the iOS keychain."
+            case .file(_, let reason):
+                return "Kept in the app's folder — \(reason)"
+            case .missing:
+                return "No key stored."
+            }
+        }
+
+        var isSecure: Bool { self == .keychain }
+    }
 
     private static let service = "com.r0gueee.theosstudio.agent"
     private static let legacyAccount = "api-key"
 
-    private static func account(for providerID: String) -> String {
-        "api-key." + providerID
-    }
+    // MARK: - Public
 
-    // MARK: - Reading and writing
-
-    static func save(_ key: String, for providerID: String) {
+    @discardableResult
+    static func save(_ key: String, for providerID: String) -> Storage {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let data = trimmed.data(using: .utf8) else {
+        guard !trimmed.isEmpty else {
             delete(for: providerID)
-            return
+            return .missing
         }
 
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account(for: providerID),
-        ]
-        let attributes: [String: Any] = [
-            kSecValueData as String: data,
-            // Available to the app after the first unlock, and never copied to
-            // another device by iCloud Keychain.
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-        ]
+        let status = writeKeychain(trimmed, account: account(for: providerID))
+        if status == errSecSuccess {
+            // The keychain has it now; a file copy from an earlier attempt is
+            // the thing to delete, not the thing to keep.
+            try? FileManager.default.removeItem(atPath: fileURL(for: providerID).path)
+            return .keychain
+        }
 
-        let updated = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if updated == errSecSuccess { return }
-        // errSecItemNotFound (or anything else): try to add it.
-        var insertion = query
-        insertion.merge(attributes) { _, new in new }
-        SecItemAdd(insertion as CFDictionary, nil)
+        if writeFile(trimmed, for: providerID) != nil {
+            return .file(path: fileURL(for: providerID).path, reason: describe(status))
+        }
+        return .missing
     }
 
     static func load(for providerID: String) -> String? {
-        if let key = read(account: account(for: providerID)) { return key }
-        // Adopt a key saved by an earlier version, when there was only one.
-        if let legacy = read(account: legacyAccount) {
+        if let key = readKeychain(account: account(for: providerID)) {
+            return key
+        }
+        // A key saved while the keychain was refusing us: use it, and move it
+        // into the keychain if that works now.
+        if let key = readFile(for: providerID) {
+            if writeKeychain(key, account: account(for: providerID)) == errSecSuccess {
+                try? FileManager.default.removeItem(atPath: fileURL(for: providerID).path)
+            }
+            return key
+        }
+        // A key saved by the version that had a single slot for all providers.
+        if let legacy = readKeychain(account: legacyAccount) {
             save(legacy, for: providerID)
-            deleteAccount(legacyAccount)
+            deleteKeychain(account: legacyAccount)
             return legacy
         }
         return nil
     }
 
-    static func delete(for providerID: String) {
-        deleteAccount(account(for: providerID))
+    static func storage(for providerID: String) -> Storage {
+        if readKeychain(account: account(for: providerID)) != nil { return .keychain }
+        if let key = readFile(for: providerID), !key.isEmpty {
+            let status = writeKeychain(key, account: account(for: providerID))
+            if status == errSecSuccess {
+                try? FileManager.default.removeItem(atPath: fileURL(for: providerID).path)
+                return .keychain
+            }
+            return .file(path: fileURL(for: providerID).path, reason: describe(status))
+        }
+        return .missing
     }
 
     static func hasKey(for providerID: String) -> Bool {
-        !(load(for: providerID) ?? "").isEmpty
+        load(for: providerID) != nil
     }
 
-    // MARK: - Primitives
+    static func delete(for providerID: String) {
+        deleteKeychain(account: account(for: providerID))
+        try? FileManager.default.removeItem(atPath: fileURL(for: providerID).path)
+    }
 
-    private static func read(account: String) -> String? {
+    // MARK: - Keychain
+
+    private static func account(for providerID: String) -> String {
+        "api-key." + providerID
+    }
+
+    private static func writeKeychain(_ key: String, account: String) -> OSStatus {
+        guard let data = key.data(using: .utf8) else { return errSecParam }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+
+        // Update first: delete-then-add leaves a window where a conflict can stop
+        // the new key from being stored at all.
+        let updated = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if updated == errSecSuccess { return errSecSuccess }
+        if updated != errSecItemNotFound { return updated }
+
+        var insertion = query
+        insertion.merge(attributes) { _, new in new }
+        return SecItemAdd(insertion as CFDictionary, nil)
+    }
+
+    private static func readKeychain(account: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -194,12 +258,55 @@ enum AgentKeychain {
         return key
     }
 
-    private static func deleteAccount(_ account: String) {
+    private static func deleteKeychain(account: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
         SecItemDelete(query as CFDictionary)
+    }
+
+    // MARK: - File fallback
+
+    /// A hidden directory in the app's own container, written 0600.
+    private static func fileURL(for providerID: String) -> URL {
+        let directory = URL(fileURLWithPath: Paths.documents).appendingPathComponent(".theosstudio/keys")
+        let name = providerID.replacingOccurrences(of: "/", with: "-")
+        return directory.appendingPathComponent(name)
+    }
+
+    private static func writeFile(_ key: String, for providerID: String) -> String? {
+        let url = fileURL(for: providerID)
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            try key.write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            return url.path
+        } catch {
+            return nil
+        }
+    }
+
+    private static func readFile(for providerID: String) -> String? {
+        let path = fileURL(for: providerID).path
+        guard let key = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func describe(_ status: OSStatus) -> String {
+        let code = Int(status)
+        let message = SecCopyErrorMessageString(status, nil) as String? ?? "status \(code)"
+        switch code {
+        case -34018:
+            return "the keychain refused this app (missing entitlement, \(code))"
+        default:
+            return "\(message) (\(code))"
+        }
     }
 }

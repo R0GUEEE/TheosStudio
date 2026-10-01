@@ -38,7 +38,11 @@ final class TheosInstallRunner: ObservableObject {
     private var privileges = PrivilegeContext(mode: .unprivileged)
     private var toolPaths: [String: String] = [:]
     private var destination = ""
+    private var scope: InstallScope = .theosAndSDK
     private var process: ShellProcess?
+    /// Every command runs with the app's PATH repaired: without it `git` cannot
+    /// find `git-remote-https` and `tar -xJf` cannot find `xz`.
+    private var environment: [String: String] = [:]
     /// The store is only used to rescan the toolchain once the install is done.
     private weak var store: StudioStore?
 
@@ -49,12 +53,14 @@ final class TheosInstallRunner: ObservableObject {
 
     // MARK: - Starting
 
-    func start(store: StudioStore, destination: String, installDependencies: Bool, fetchSDK: Bool) {
+    func start(store: StudioStore, destination: String, scope: InstallScope) {
         guard !phase.isRunning else { return }
 
         self.store = store
         self.destination = destination
+        self.scope = scope
         self.privileges = store.privileges
+        self.environment = store.commandEnvironment()
         self.log = []
         self.warnings = []
         self.completedSteps = 0
@@ -67,19 +73,21 @@ final class TheosInstallRunner: ObservableObject {
         append("$ destination: \(destination)")
         append("$ privileges: \(privileges.summary)")
 
-        if fetchSDK {
+        append("$ PATH: \(environment["PATH"] ?? "unset")")
+
+        if scope == .dependenciesOnly {
+            finishPlanning(store: store, asset: nil)
+        } else {
             phase = .preparing
             append("Looking up the newest SDK in theos/sdks…")
-            Task { await self.lookupSDK(store: store, installDependencies: installDependencies, fetchSDK: fetchSDK) }
-        } else {
-            finishPlanning(store: store, asset: nil, installDependencies: installDependencies, fetchSDK: fetchSDK)
+            Task { await self.lookupSDK(store: store) }
         }
     }
 
     /// The SDK is a release asset, so its URL is only known after asking GitHub.
     /// A failure here is not fatal: Theos installs without an SDK, the plan says
     /// so, and the SDK can be fetched later by running this again.
-    private func lookupSDK(store: StudioStore, installDependencies: Bool, fetchSDK: Bool) async {
+    private func lookupSDK(store: StudioStore) async {
         var asset: SDKAsset?
         do {
             let (data, response) = try await URLSession.shared.data(from: TheosInstaller.sdkReleaseURL)
@@ -94,18 +102,23 @@ final class TheosInstallRunner: ObservableObject {
             append("Could not read the SDK release list: \(error.localizedDescription)")
             append("Continuing without an SDK — the plan will say what that costs.")
         }
-        finishPlanning(store: store, asset: asset, installDependencies: installDependencies, fetchSDK: fetchSDK)
+        finishPlanning(store: store, asset: asset)
     }
 
-    private func finishPlanning(store: StudioStore, asset: SDKAsset?, installDependencies: Bool, fetchSDK: Bool) {
+    private func finishPlanning(store: StudioStore, asset: SDKAsset?) {
         let options = TheosInstallOptions(
             destination: destination,
-            installDependencies: installDependencies,
-            fetchSDK: fetchSDK,
+            scope: scope,
             sdkAsset: asset,
             procursus: store.isProcursus
         )
-        let plan = TheosInstaller.plan(options: options, toolPaths: toolPaths, privileges: privileges)
+        let plan = TheosInstaller.plan(
+            options: options,
+            toolPaths: toolPaths,
+            privileges: privileges,
+            exists: FS.fileExists,
+            listDirectory: FS.list
+        )
         warnings = plan.warnings
         queue = plan.steps
         totalSteps = plan.steps.count
@@ -169,7 +182,7 @@ final class TheosInstallRunner: ObservableObject {
             let process = ShellProcess(
                 executable: executable,
                 arguments: finalArguments,
-                environment: ProcessInfo.processInfo.environment
+                environment: environment
             )
             self.process = process
             do {
@@ -187,7 +200,11 @@ final class TheosInstallRunner: ObservableObject {
                         self.completedSteps += 1
                         self.runNext()
                     } else {
-                        self.fail(self.failureMessage(for: step, outcome: outcome))
+                        self.fail(self.failureMessage(
+                            for: step,
+                            outcome: outcome,
+                            command: self.pretty(executable, finalArguments)
+                        ))
                     }
                 })
             } catch {
@@ -235,12 +252,14 @@ final class TheosInstallRunner: ObservableObject {
 
     // MARK: - Reporting
 
-    private func failureMessage(for step: InstallStep, outcome: ShellProcess.Outcome) -> String {
+    private func failureMessage(for step: InstallStep, outcome: ShellProcess.Outcome, command: String) -> String {
         let tail = outcome.output
             .split(separator: "\n", omittingEmptySubsequences: true)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .last { !$0.isEmpty } ?? "no output"
-        var message = "\(step.label) failed (exit \(outcome.status)): \(tail)"
+        // The exact command is in the message on purpose: it is the thing that can
+        // be pasted into a terminal to see the same failure with a shell's help.
+        var message = "\(step.label) failed (exit \(outcome.status)): \(tail)\n\ncommand: \(command)"
         if step.requiresRoot && !privileges.canEscalate {
             // A download has no tool to name, so fall back to the step's label.
             let tool = step.tool ?? step.label

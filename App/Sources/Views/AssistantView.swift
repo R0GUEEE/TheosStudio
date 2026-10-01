@@ -260,7 +260,7 @@ struct AssistantView: View {
     private func configureSession() {
         session.configure(
             settings: store.agent,
-            apiKey: AgentKeychain.load(for: store.agent.providerID) ?? ""
+            apiKey: AgentKeyStore.load(for: store.agent.providerID) ?? ""
         )
     }
 

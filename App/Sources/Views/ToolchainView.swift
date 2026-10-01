@@ -188,16 +188,16 @@ struct ToolchainView: View {
                 }
             } else {
                 Button {
-                    installer.start(store: store, destination: destination, installDependencies: true, fetchSDK: true)
+                    installer.start(store: store, destination: destination, scope: .theosAndSDK)
                 } label: {
-                    Label("Install Theos, an SDK and the packages", systemImage: "arrow.down.circle")
+                    Label("Install Theos and an SDK", systemImage: "arrow.down.circle")
                 }
                 Button {
-                    installer.start(store: store, destination: destination, installDependencies: false, fetchSDK: true)
+                    installer.start(store: store, destination: destination, scope: .sdkOnly)
                 } label: {
-                    Label("Install Theos and an SDK only (no root)", systemImage: "folder.badge.plus")
+                    Label("Fetch an SDK only (no root)", systemImage: "folder.badge.plus")
                 }
-                Text("The second one needs no root at all: it clones Theos and unpacks an SDK into the folder above. It is what to use when this device will not let the app install packages.")
+                Text("Fetching an SDK touches nothing but the folder above: it downloads the newest patched SDK from theos/sdks and unpacks it. Use it when Theos is already there — and when a broken checkout would otherwise get in the way.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -212,6 +212,12 @@ struct ToolchainView: View {
             }
 
             if !installer.log.isEmpty {
+                Button {
+                    UIPasteboard.general.string = installer.log.joined(separator: "\n")
+                } label: {
+                    Label("Copy the log", systemImage: "doc.on.doc")
+                }
+                .buttonStyle(.borderless)
                 ConsoleText(lines: installer.log)
                     .frame(height: 240)
                     .cornerRadius(8)
@@ -219,7 +225,7 @@ struct ToolchainView: View {
         } header: {
             Text("Install Theos")
         } footer: {
-            Text("The official installer refuses to run as root and so does Theos itself, which is why this installs into a folder you own and points Theos at it. It fetches the same patched SDKs from theos/sdks that the official installer does.")
+            Text("The official installer refuses to run as root and so does Theos itself, which is why this installs into a folder you own and points Theos at it. It fetches the same patched SDKs from theos/sdks that the official installer does. If the log says a tool is missing, install it from Sileo — xz-utils, coreutils, git, tar.")
         }
     }
 
@@ -256,7 +262,7 @@ struct ToolchainView: View {
                         .buttonStyle(.borderless)
                         Spacer()
                         Button {
-                            installer.start(store: store, destination: destination, installDependencies: true, fetchSDK: false)
+                            installer.start(store: store, destination: destination, scope: .dependenciesOnly)
                         } label: {
                             Label("Install", systemImage: "arrow.down.circle")
                         }

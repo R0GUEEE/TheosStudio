@@ -88,8 +88,7 @@ final class TheosInstallerTests: XCTestCase {
     }
 
     func testDependencyStepUsesTheFullListOnANonProcursusBootstrap() {
-        var options = options()
-        options.procursus = false
+        let options = TheosInstallOptions(destination: "/var/mobile/Documents/Theos", sdkAsset: sdk, procursus: false)
         let plan = TheosInstaller.plan(
             options: options,
             toolPaths: tools(including: allTools),
@@ -137,8 +136,7 @@ final class TheosInstallerTests: XCTestCase {
         )
         XCTAssertEqual(plan.missingTools, ["git"])
         XCTAssertFalse(plan.steps.contains { $0.tool == "git" })
-        XCTAssertTrue(plan.warnings.contains { $0.contains("git is not installed") })
-        XCTAssertTrue(plan.warnings.contains { $0.contains("fetches Theos itself") })
+        XCTAssertTrue(plan.warnings.contains { $0.contains("git is not installed") && $0.contains("cloning Theos") }, "\(plan.warnings)")
     }
 
     func testStepsKnowWhenTheyAreAlreadyDone() {
@@ -217,8 +215,7 @@ final class TheosInstallerTests: XCTestCase {
     }
 
     func testNoSDKSelectedIsWarnedAbout() {
-        var options = options()
-        options.sdkAsset = nil
+        let options = TheosInstallOptions(destination: "/var/mobile/Documents/Theos", sdkAsset: nil)
         let plan = TheosInstaller.plan(
             options: options,
             toolPaths: tools(including: allTools),
@@ -228,16 +225,65 @@ final class TheosInstallerTests: XCTestCase {
         XCTAssertTrue(plan.warnings.contains { $0.contains("SDK") && $0.contains("cannot compile") })
     }
 
-    func testDependenciesCanBeSkippedEntirely() {
-        var options = options()
-        options.installDependencies = false
-        options.fetchSDK = false
+    /// The scopes exist because the three parts fail for different reasons: only
+    /// the packages need root, and an SDK fetch must not be blocked by anything
+    /// else being wrong.
+    func testDependenciesOnlyPlansJustThePackages() {
         let plan = TheosInstaller.plan(
-            options: options,
+            options: TheosInstallOptions(destination: "/tmp/Theos", scope: .dependenciesOnly),
             toolPaths: tools(including: allTools),
             privileges: PrivilegeContext(mode: .root)
         )
-        XCTAssertEqual(plan.steps.map(\.tool), ["mkdir", "git", "git"])
+        XCTAssertEqual(plan.steps.map(\.tool), ["apt-get", "apt-get"])
+        XCTAssertFalse(plan.steps.contains { isDownload($0) })
+    }
+
+    func testSDKOnlyNeverTouchesTheCheckout() {
+        let plan = TheosInstaller.plan(
+            options: TheosInstallOptions(destination: "/var/mobile/Documents/Theos", scope: .sdkOnly, sdkAsset: sdk),
+            toolPaths: tools(including: allTools),
+            privileges: PrivilegeContext(mode: .root)
+        )
+        XCTAssertFalse(plan.steps.contains { $0.tool == "git" })
+        XCTAssertFalse(plan.steps.contains { $0.tool == "apt-get" })
+        XCTAssertTrue(plan.steps.contains { isDownload($0) })
+        XCTAssertTrue(plan.steps.contains { $0.tool == "tar" })
+    }
+
+    /// A healthy checkout needs no cloning, and the only git step left is the one
+    /// that repairs submodules — which must not be able to stop the SDK.
+    func testAnExistingCheckoutIsNotClonedAgain() {
+        let destination = "/var/mobile/Documents/Theos"
+        let plan = TheosInstaller.plan(
+            options: options(destination: destination),
+            toolPaths: tools(including: allTools),
+            privileges: PrivilegeContext(mode: .root),
+            exists: { $0 == destination + "/makefiles/common.mk" || $0 == destination + "/.git" },
+            listDirectory: { _ in ["Makefile", "makefiles", "bin"] }
+        )
+        XCTAssertFalse(plan.steps.contains { $0.arguments.first == "clone" })
+        let repair = plan.steps.first { $0.tool == "git" }
+        XCTAssertEqual(repair?.label, "Repair Theos submodules")
+        XCTAssertTrue(repair?.tolerateFailure == true, "a broken checkout must not stop the SDK fetch")
+        XCTAssertTrue(plan.steps.contains { isDownload($0) })
+    }
+
+    /// git refuses to clone into a directory that already holds something, and
+    /// the app must not empty it to make room.
+    func testADirectoryWithSomethingElseInItIsExplainedNotClobbered() {
+        let destination = "/var/mobile/Documents/Theos"
+        let plan = TheosInstaller.plan(
+            options: options(destination: destination),
+            toolPaths: tools(including: allTools),
+            privileges: PrivilegeContext(mode: .root),
+            exists: { _ in false },
+            listDirectory: { _ in ["old-notes.txt", "something"] }
+        )
+        XCTAssertFalse(plan.steps.contains { $0.arguments.first == "clone" })
+        XCTAssertTrue(
+            plan.warnings.contains { $0.contains("is not a Theos checkout") && $0.contains("will not delete anything") },
+            "\(plan.warnings)"
+        )
     }
 
     // MARK: - SDK discovery

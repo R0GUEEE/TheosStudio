@@ -65,16 +65,28 @@ public struct InstallStep: Equatable, Sendable {
     }
 }
 
+/// What an installation is for.
+///
+/// Separate entry points because the three parts fail for different reasons and
+/// need different privileges: the packages need root, cloning Theos needs a
+/// writable folder, and an SDK needs neither.
+public enum InstallScope: String, CaseIterable, Sendable {
+    /// Clone Theos if it is not there, and fetch an SDK.
+    case theosAndSDK
+    /// Only fetch an SDK into an existing Theos. Nothing else runs, so a broken
+    /// checkout cannot stop it.
+    case sdkOnly
+    /// Only install the dependency packages. Needs root.
+    case dependenciesOnly
+}
+
 public struct TheosInstallOptions: Equatable, Sendable {
     /// Where Theos goes. A path the app can write: installing Theos into the
     /// bootstrap needs root, and Theos explicitly refuses to be installed or run
     /// as root, so a directory in the app's own document folder is the right
     /// answer, not a compromise.
     public var destination: String
-    /// Install the packages Theos needs (clang, ldid, dpkg, make, perl, git…).
-    /// This is the only part that needs root.
-    public var installDependencies: Bool
-    public var fetchSDK: Bool
+    public var scope: InstallScope
     /// Resolved from the GitHub API by the caller; the plan only places it.
     public var sdkAsset: SDKAsset?
     /// Procursus ships one dependency package; other bootstraps need the list.
@@ -82,14 +94,12 @@ public struct TheosInstallOptions: Equatable, Sendable {
 
     public init(
         destination: String,
-        installDependencies: Bool = true,
-        fetchSDK: Bool = true,
+        scope: InstallScope = .theosAndSDK,
         sdkAsset: SDKAsset? = nil,
         procursus: Bool = false
     ) {
         self.destination = destination
-        self.installDependencies = installDependencies
-        self.fetchSDK = fetchSDK
+        self.scope = scope
         self.sdkAsset = sdkAsset
         self.procursus = procursus
     }
@@ -105,27 +115,13 @@ public struct TheosInstallPlan: Equatable, Sendable {
     public var needsRoot: Bool { steps.contains { $0.requiresRoot } }
 }
 
-public enum SDKFetchError: LocalizedError {
-    case noAssets
-    case malformed
-
-    public var errorDescription: String? {
-        switch self {
-        case .noAssets:
-            return "The theos/sdks release has no iPhoneOS SDK asset."
-        case .malformed:
-            return "The GitHub release response could not be read."
-        }
-    }
-}
-
 /// Plans an on-device Theos installation.
 ///
 /// This mirrors what the official installer does on a jailbroken device, split
-/// along the line that actually matters: the *dependencies* come from the package
-/// manager and need root, while Theos itself and its SDK are files in a folder and
-/// do not. When there is no way to escalate, the plan simply has no dependency
-/// steps and says why — instead of failing halfway with a permission error.
+/// along the lines that actually matter: the *dependencies* come from the package
+/// manager and need root; Theos and its SDK are files in a folder and do not; and
+/// the SDK does not care whether the checkout is healthy, so one button fetches
+/// it on its own.
 public enum TheosInstaller {
 
     public static let repository = "https://github.com/theos/theos.git"
@@ -137,10 +133,17 @@ public enum TheosInstaller {
         "ldid", "make", "odcctools", "perl", "rsync", "xz",
     ]
 
+    /// - Parameters:
+    ///   - exists: answers "is there a file here?"
+    ///   - listDirectory: returns a directory's entries, empty when it is absent.
+    ///     Used to tell an empty destination (clone into it) from a directory
+    ///     that already holds something (clone into it would fail halfway).
     public static func plan(
         options: TheosInstallOptions,
         toolPaths: [String: String],
-        privileges: PrivilegeContext
+        privileges: PrivilegeContext,
+        exists: (String) -> Bool = { _ in false },
+        listDirectory: (String) -> [String] = { _ in [] }
     ) -> TheosInstallPlan {
         var steps: [InstallStep] = []
         var warnings: [String] = []
@@ -154,16 +157,15 @@ public enum TheosInstaller {
             return false
         }
 
-        if options.installDependencies {
+        if options.scope == .dependenciesOnly || options.scope == .theosAndSDK {
             if privileges.canEscalate {
                 if require("apt-get", because: "the dependency packages") {
-                    let packages = options.procursus
-                        ? ["theos-dependencies"]
-                        : dependencyPackages
+                    let packages = options.procursus ? ["theos-dependencies"] : dependencyPackages
                     steps.append(InstallStep(
                         label: "Updating package lists",
                         kind: .command(tool: "apt-get", arguments: ["update"]),
                         requiresRoot: true,
+                        tolerateFailure: true,
                         note: "Failure here is not fatal: some repositories are unreachable and apt-get says so."
                     ))
                     steps.append(InstallStep(
@@ -175,16 +177,50 @@ public enum TheosInstaller {
                 }
             } else {
                 warnings.append(
-                    "The dependency packages (clang, ldid, dpkg, make, perl, git…) need root and this app has no way to become root. Tap “Copy command” and run it from a root shell, or install them from Sileo."
+                    "The dependency packages (clang, ldid, dpkg, make, perl, git…) need root and this app has no way to become root. Install them from Sileo instead — this app cannot."
                 )
             }
         }
 
-        let destination = options.destination
-        let theosMakefiles = destination + "/makefiles/common.mk"
-        // Reported through `require` so a missing git names itself in
-        // missingTools and in the warnings, exactly like the other tools.
-        let cloned = require("git", because: "Theos itself")
+        if options.scope == .theosAndSDK {
+            steps.append(contentsOf: theosSteps(
+                destination: options.destination,
+                toolPaths: toolPaths,
+                require: require,
+                warnings: &warnings,
+                exists: exists,
+                listDirectory: listDirectory
+            ))
+        }
+
+        if options.scope == .theosAndSDK || options.scope == .sdkOnly {
+            steps.append(contentsOf: sdkSteps(
+                destination: options.destination,
+                asset: options.sdkAsset,
+                toolPaths: toolPaths,
+                require: require,
+                warnings: &warnings
+            ))
+        }
+
+        return TheosInstallPlan(steps: steps, warnings: warnings, missingTools: missing)
+    }
+
+    // MARK: - Theos itself
+
+    private static func theosSteps(
+        destination: String,
+        toolPaths: [String: String],
+        require: (String, String) -> Bool,
+        warnings: inout [String],
+        exists: (String) -> Bool,
+        listDirectory: (String) -> [String]
+    ) -> [InstallStep] {
+        var steps: [InstallStep] = []
+        let makefiles = destination + "/makefiles/common.mk"
+        let gitMetadata = destination + "/.git"
+        let alreadyThere = exists(makefiles)
+        let entries = listDirectory(destination)
 
         if require("mkdir", because: "the Theos directory") {
             steps.append(InstallStep(
@@ -194,82 +230,110 @@ public enum TheosInstaller {
             ))
         }
 
-        if cloned {
+        if alreadyThere {
+            if exists(gitMetadata) {
+                steps.append(InstallStep(
+                    label: "Repair Theos submodules",
+                    kind: .command(tool: "git", arguments: ["-C", destination, "submodule", "update", "--init", "--recursive"]),
+                    // Not fatal: an unreachable GitHub or an odd git state must not
+                    // stop the SDK from being fetched, which is the part that
+                    // unblocks a build.
+                    tolerateFailure: true,
+                    note: "The submodules are the Logos preprocessor and the headers. A no-op when they are already there."
+                ))
+            } else {
+                warnings.append("Theos is present but has no .git directory, so its submodules cannot be checked or updated. If a build fails saying Logos is missing, reinstall Theos into an empty folder instead.")
+            }
+            return steps
+        }
+
+        // A directory with something in it that is not a checkout cannot be
+        // cloned into — git refuses, and deleting someone's files to make room is
+        // not this app's decision to make.
+        if !entries.isEmpty {
+            warnings.append("\(destination) already contains \(entries.count) item\(entries.count == 1 ? "" : "s") and is not a Theos checkout. Move it aside, or install into a different folder — this app will not delete anything.")
+            return steps
+        }
+
+        guard require("git", because: "cloning Theos") else { return steps }
+        steps.append(InstallStep(
+            label: "Clone Theos",
+            kind: .command(tool: "git", arguments: ["clone", "--recursive", repository, destination]),
+            skipIfExists: makefiles,
+            note: "The submodules are the Logos preprocessor, the headers and the templates — without them nothing builds."
+        ))
+        steps.append(InstallStep(
+            label: "Repair Theos submodules",
+            kind: .command(tool: "git", arguments: ["-C", destination, "submodule", "update", "--init", "--recursive"]),
+            tolerateFailure: true
+        ))
+        return steps
+    }
+
+    // MARK: - The SDK
+
+    private static func sdkSteps(
+        destination: String,
+        asset: SDKAsset?,
+        toolPaths: [String: String],
+        require: (String, String) -> Bool,
+        warnings: inout [String]
+    ) -> [InstallStep] {
+        guard let asset else {
+            warnings.append("No SDK was selected, so Theos would be left without one — and Theos cannot compile anything without an SDK in $THEOS/sdks.")
+            return []
+        }
+
+        var steps: [InstallStep] = []
+        let sdkDirectory = destination + "/sdks"
+        let archive = sdkDirectory + "/." + asset.name + ".tar.xz"
+        let installed = sdkDirectory + "/" + asset.name
+
+        if require("mkdir", because: "the SDK directory") {
             steps.append(InstallStep(
-                label: "Clone Theos",
-                kind: .command(tool: "git", arguments: ["clone", "--recursive", repository, destination]),
-                skipIfExists: theosMakefiles,
-                note: "The submodules are the Logos preprocessor, the headers and the templates — without them nothing builds."
-            ))
-            steps.append(InstallStep(
-                label: "Update Theos submodules",
-                kind: .command(tool: "git", arguments: ["-C", destination, "submodule", "update", "--init", "--recursive"]),
-                note: "A no-op after a fresh clone; it repairs a clone that was interrupted."
+                label: "Create \(sdkDirectory)",
+                kind: .command(tool: "mkdir", arguments: ["-p", sdkDirectory]),
+                skipIfExists: sdkDirectory
             ))
         }
 
-        if options.fetchSDK {
-            if let asset = options.sdkAsset {
-                let sdkDirectory = destination + "/sdks"
-                let archive = sdkDirectory + "/." + asset.name + ".tar.xz"
-                let installed = sdkDirectory + "/" + asset.name
+        // The download needs no tool: the app fetches it with its own networking.
+        steps.append(InstallStep(
+            label: "Download \(asset.name) (\(asset.version))",
+            kind: .download(url: asset.url, to: archive),
+            skipIfExists: installed,
+            note: "A patched SDK from theos/sdks, the same release the official installer uses."
+        ))
 
-                if require("mkdir", because: "the SDK directory") {
-                    steps.append(InstallStep(
-                        label: "Create \(sdkDirectory)",
-                        kind: .command(tool: "mkdir", arguments: ["-p", sdkDirectory]),
-                        skipIfExists: sdkDirectory
-                    ))
-                }
-
-                // The download needs no tool: the app fetches it.
+        if require("tar", because: "unpacking the SDK") {
+            steps.append(InstallStep(
+                label: "Unpack \(asset.name)",
+                kind: .command(tool: "tar", arguments: ["-xJf", archive, "-C", sdkDirectory]),
+                skipIfExists: installed,
+                tolerateFailure: true,
+                note: "If this tar was built without xz support the next step decompresses first."
+            ))
+            // The fallback ladder: each rung is skipped once the SDK is in place,
+            // so the first one that works ends the sequence.
+            if toolPaths["xz"] != nil {
+                let decompressed = sdkDirectory + "/." + asset.name + ".tar"
                 steps.append(InstallStep(
-                    label: "Download \(asset.name) (\(asset.version))",
-                    kind: .download(url: asset.url, to: archive),
+                    label: "Decompress \(asset.name)",
+                    kind: .command(tool: "xz", arguments: ["-d", archive]),
                     skipIfExists: installed,
-                    note: "A patched SDK from theos/sdks, the same release the official installer uses."
+                    tolerateFailure: true
                 ))
-
-                if require("tar", because: "unpacking the SDK") {
-                    steps.append(InstallStep(
-                        label: "Unpack \(asset.name)",
-                        kind: .command(tool: "tar", arguments: ["-xJf", archive, "-C", sdkDirectory]),
-                        skipIfExists: installed,
-                        tolerateFailure: true,
-                        note: "If this tar was built without xz support the next step decompresses first."
-                    ))
-                    // The fallback ladder: each step is skipped once the SDK is in
-                    // place, so the first one that works ends the sequence.
-                    if toolPaths["xz"] != nil {
-                        let decompressed = sdkDirectory + "/." + asset.name + ".tar"
-                        steps.append(InstallStep(
-                            label: "Decompress \(asset.name)",
-                            kind: .command(tool: "xz", arguments: ["-d", archive]),
-                            skipIfExists: installed,
-                            tolerateFailure: true
-                        ))
-                        steps.append(InstallStep(
-                            label: "Unpack \(asset.name) (after decompression)",
-                            kind: .command(tool: "tar", arguments: ["-xf", decompressed, "-C", sdkDirectory]),
-                            skipIfExists: installed,
-                            note: "The device's tar has no xz support, so xz did it."
-                        ))
-                    } else {
-                        warnings.append("xz is not installed, so if this device's tar was built without xz support the SDK cannot be unpacked. Installing xz-utils fixes that.")
-                    }
-                }
+                steps.append(InstallStep(
+                    label: "Unpack \(asset.name) (after decompression)",
+                    kind: .command(tool: "tar", arguments: ["-xf", decompressed, "-C", sdkDirectory]),
+                    skipIfExists: installed,
+                    note: "This device's tar has no xz support, so xz did it."
+                ))
             } else {
-                warnings.append("No SDK was selected, so Theos would be installed without one — and Theos cannot compile anything without an SDK in $THEOS/sdks.")
+                warnings.append("xz is not installed, so if this device's tar was built without xz support the SDK cannot be unpacked. Installing xz-utils from Sileo fixes that.")
             }
         }
-
-        if !cloned {
-            warnings.append("git is what fetches Theos itself. Install it (it comes with the dependency packages) and try again.")
-        } else if !steps.contains(where: { $0.requiresRoot }) && options.installDependencies && !privileges.canEscalate {
-            warnings.append("Installing Theos itself does not need root, but building a tweak also needs clang, ldid, dpkg-deb and perl, and those come from the dependency packages.")
-        }
-
-        return TheosInstallPlan(steps: steps, warnings: warnings, missingTools: missing)
+        return steps
     }
 
     // MARK: - SDK discovery

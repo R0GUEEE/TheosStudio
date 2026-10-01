@@ -16,6 +16,8 @@ struct AgentSettingsView: View {
 
     @State private var keyDraft = ""
     @State private var hasKey = false
+    @State private var keyStorage: AgentKeyStore.Storage = .missing
+    @State private var keyLength = 0
     @State private var models: [AgentModel] = []
     @State private var isLoadingModels = false
     @State private var modelError: String?
@@ -94,24 +96,32 @@ struct AgentSettingsView: View {
 
             if provider.requiresKey {
                 if hasKey {
-                    HStack {
-                        Label("Key stored for \(provider.displayName)", systemImage: "checkmark.seal.fill")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label("Key stored for \(provider.displayName)", systemImage: keyStorage.isSecure ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                             .font(.footnote)
-                            .foregroundColor(.green)
-                        Spacer()
-                        Button("Replace") { AgentKeychain.delete(for: provider.id); hasKey = false }
-                            .buttonStyle(.borderless)
-                            .font(.footnote)
+                            .foregroundColor(keyStorage.isSecure ? .green : .orange)
+                        Text("\(keyStorage.label) \(keyLength) characters.")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
                     }
+                    Button("Replace key") {
+                        AgentKeyStore.delete(for: provider.id)
+                        refreshKeyState()
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.footnote)
                 } else {
                     SecureField("API key", text: $keyDraft)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
                     Button("Save key") {
-                        AgentKeychain.save(keyDraft, for: provider.id)
+                        let storage = AgentKeyStore.save(keyDraft, for: provider.id)
                         keyDraft = ""
-                        refreshKeyState()
                         modelError = nil
+                        refreshKeyState()
+                        if storage == .missing {
+                            modelError = "The key could not be stored: the keychain refused it and the app's own folder is not writable."
+                        }
                     }
                     .disabled(keyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
@@ -197,8 +207,30 @@ struct AgentSettingsView: View {
             .autocapitalization(.none)
             .disableAutocorrection(true)
 
+            if let caveat = AgentModelList.toolCallingCaveat(for: store.agent.model) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                    Text(caveat).font(.footnote)
+                }
+            }
+
             if let modelError {
-                Text(modelError).font(.footnote).foregroundColor(.red)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(modelError).font(.footnote).foregroundColor(.red)
+                    Text("Requested: GET \(store.agent.modelsEndpoint?.absoluteString ?? "—")")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text("Key: \(hasKey ? "present, \(keyLength) characters" : "none")")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Button {
+                        UIPasteboard.general.string = "GET \(store.agent.modelsEndpoint?.absoluteString ?? "?")\nkey: \(hasKey ? "\(keyLength) chars" : "missing")\nerror: \(modelError)"
+                    } label: {
+                        Label("Copy these details", systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                }
             }
         } header: {
             Text("Model")
@@ -269,15 +301,18 @@ struct AgentSettingsView: View {
     // MARK: - Actions
 
     private func refreshKeyState() {
-        hasKey = AgentKeychain.hasKey(for: provider.id)
         keyDraft = ""
+        let key = AgentKeyStore.load(for: provider.id)
+        hasKey = key != nil
+        keyLength = key?.count ?? 0
+        keyStorage = AgentKeyStore.storage(for: provider.id)
     }
 
     private func loadModels() {
         isLoadingModels = true
         modelError = nil
         let settings = store.agent
-        let key = AgentKeychain.load(for: settings.providerID) ?? ""
+        let key = AgentKeyStore.load(for: settings.providerID) ?? ""
         Task {
             do {
                 let listed = try await AgentClient().models(settings: settings, apiKey: key)
@@ -298,7 +333,7 @@ struct AgentSettingsView: View {
         testResult = nil
         testSucceeded = false
         let settings = store.agent
-        let key = AgentKeychain.load(for: settings.providerID) ?? ""
+        let key = AgentKeyStore.load(for: settings.providerID) ?? ""
         Task {
             do {
                 let reply = try await AgentClient().verify(settings: settings, apiKey: key)

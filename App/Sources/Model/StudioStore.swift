@@ -191,6 +191,38 @@ final class StudioStore: ObservableObject {
         FS.fileExists("/var/jb/.procursus_strapped") || FS.fileExists("/.procursus_strapped")
     }
 
+    /// The environment any command the app runs should get.
+    ///
+    /// The important part is `PATH`. The app's own environment does not include
+    /// the jailbreak's binary directories, and tools find their helpers through
+    /// PATH: `git clone https://…` needs `git-remote-https`, GNU `tar -xJf` needs
+    /// `xz`, `dpkg` maintainer scripts need `sh`. Running them with the app's
+    /// inherited environment is how a command that works in a terminal fails here
+    /// with "cannot run …: No such file or directory".
+    func commandEnvironment() -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        var pathComponents: [String] = []
+        if let toolchain {
+            pathComponents += toolchain.binDirectories
+            if let root = toolchain.theosRoot {
+                pathComponents.append(root + "/bin")
+            }
+        } else {
+            pathComponents += jailbreak.binDirectories
+        }
+        pathComponents += ["/var/jb/usr/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin", "/usr/local/bin"]
+        if let existing = environment["PATH"] {
+            pathComponents += existing.split(separator: ":").map(String.init)
+        }
+        var seen = Set<String>()
+        environment["PATH"] = pathComponents.filter { !$0.isEmpty && seen.insert($0).inserted }.joined(separator: ":")
+        environment["HOME"] = NSHomeDirectory()
+        // Deterministic output: the app reads these messages.
+        environment["LC_ALL"] = "C"
+        environment["LANG"] = "C"
+        return environment
+    }
+
     /// The environment a build runs with: Theos's `PATH` additions plus the
     /// jailbreak's own binary directories.
     func buildEnvironment() -> [String: String] {

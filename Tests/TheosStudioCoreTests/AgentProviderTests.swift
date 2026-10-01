@@ -115,6 +115,45 @@ final class AgentModelListTests: XCTestCase {
         XCTAssertEqual(AgentModelList.sorted(models).map(\.id), ["alpha", "Beta", "zeta"])
     }
 
+    /// DeepSeek's list is exactly this: no name, no context length, two models.
+    /// The setup screen has to turn it into a picker with both of them in it.
+    func testDecodingDeepSeeksShape() {
+        let json = """
+        {"object":"list","data":[
+          {"id":"deepseek-chat","object":"model","owned_by":"deepseek"},
+          {"id":"deepseek-reasoner","object":"model","owned_by":"deepseek"}
+        ]}
+        """
+        let models = (try? AgentModelList.decode(Data(json.utf8))) ?? []
+        XCTAssertEqual(AgentModelList.chatModels(models).map(\.id), ["deepseek-chat", "deepseek-reasoner"])
+        XCTAssertNil(models[0].displayName)
+        XCTAssertNil(models[0].contextLength)
+    }
+
+    func testAlternativeShapesAreAccepted() {
+        // The array nested under `models`, ids under `model`, a string context
+        // window, and an entry with no id at all.
+        let json = """
+        {"models":[
+          {"model":"qwen2.5-coder","context_length":"32768"},
+          {"name":"No id here"},
+          {"id":"llama3.2","context_length":131072}
+        ]}
+        """
+        let models = (try? AgentModelList.decode(Data(json.utf8))) ?? []
+        XCTAssertEqual(models.map(\.id), ["qwen2.5-coder", "llama3.2"])
+        XCTAssertEqual(models[0].contextLength, 32768)
+        XCTAssertEqual(models[1].contextLength, 131072)
+    }
+
+    func testReasoningModelsGetAToolCallingCaveat() {
+        XCTAssertNotNil(AgentModelList.toolCallingCaveat(for: "deepseek-reasoner"))
+        XCTAssertNotNil(AgentModelList.toolCallingCaveat(for: "deepseek-r1"))
+        XCTAssertTrue(AgentModelList.toolCallingCaveat(for: "deepseek-reasoner")!.contains("deepseek-chat"))
+        XCTAssertNil(AgentModelList.toolCallingCaveat(for: "deepseek-chat"))
+        XCTAssertNil(AgentModelList.toolCallingCaveat(for: "gpt-4o"))
+    }
+
     func testMalformedResponsesThrow() {
         XCTAssertThrowsError(try AgentModelList.decode(Data("not json".utf8)))
         XCTAssertThrowsError(try AgentModelList.decode(Data(#"{"error": "unauthorized"}"#.utf8)))

@@ -108,6 +108,12 @@ and a rootless package must never hardcode `/Library` or `/usr`.
 
 **Setup** (Assistant tab → Set up the model, or Settings → Assistant):
 
+> The key is kept in the iOS keychain under the provider's name. An ad-hoc signed
+> app is refused by securityd unless it carries an `application-identifier` and a
+> `keychain-access-group`, which this app now ships; if the keychain still refuses,
+> the key is kept in a 0600 file inside the app's folder **and the setup screen
+> says so** rather than pretending it saved.
+
 1. **Pick a provider** — OpenAI, DeepSeek, OpenRouter, Anthropic, Google Gemini,
    Groq, Mistral, xAI, Together, a local Ollama or LM Studio, or a custom endpoint.
    The base URL fills itself in.
@@ -144,6 +150,7 @@ So the app asks for exactly one thing at a time, and never claims otherwise:
 | --- | --- | --- |
 | Edit, build, package a project | no | runs `make` itself |
 | Install Theos and an SDK into `~/Documents/Theos` | no | `git clone`, then the app downloads the SDK itself and unpacks it with `tar` |
+| Fetch only an SDK into an existing Theos | no | the same download and unpack, touching nothing else |
 | Install `clang`, `ldid`, `git`, `perl`… | yes | `sudo -n apt-get install -y …` when passwordless sudo exists |
 | `dpkg -i` a built tweak | yes | `sudo -n dpkg -i …`, else hands the `.deb` to Sileo |
 | Respring | yes | `sudo -n sbreload`, else `sudo -n killall -9 SpringBoard` |

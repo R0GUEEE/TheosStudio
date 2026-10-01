@@ -66,7 +66,7 @@ final class PackageInstaller: ObservableObject {
         log.append("Privileges: \(store.privileges.summary)")
         phase = .working("Installing")
         let command = store.privileges.wrapped(dpkg, ["-i", debPath])
-        run(command.executable, command.arguments) { [weak self] outcome in
+        run(command.executable, command.arguments, store: store) { [weak self] outcome in
             guard let self else { return }
             if outcome.succeeded {
                 self.log.append("Installed.")
@@ -101,7 +101,7 @@ final class PackageInstaller: ObservableObject {
         log = ["Removing \(identifier)"]
         phase = .working("Removing")
         let command = store.privileges.wrapped(dpkg, ["-r", identifier])
-        run(command.executable, command.arguments) { [weak self] outcome in
+        run(command.executable, command.arguments, store: store) { [weak self] outcome in
             guard let self else { return }
             if outcome.succeeded {
                 self.log.append("Removed \(identifier).")
@@ -121,14 +121,14 @@ final class PackageInstaller: ObservableObject {
         phase = .working("Respringing")
         if let reload = toolPath(named: "sbreload", store: store) {
             let command = store.privileges.wrapped(reload, [])
-            run(command.executable, command.arguments) { [weak self] outcome in
+            run(command.executable, command.arguments, store: store) { [weak self] outcome in
                 self?.finishRespring(outcome, command: "sbreload")
             }
             return
         }
         if let killall = toolPath(named: "killall", store: store) {
             let command = store.privileges.wrapped(killall, ["-9", "SpringBoard"])
-            run(command.executable, command.arguments) { [weak self] outcome in
+            run(command.executable, command.arguments, store: store) { [weak self] outcome in
                 self?.finishRespring(outcome, command: "killall -9 SpringBoard")
             }
             return
@@ -173,8 +173,16 @@ final class PackageInstaller: ObservableObject {
 
     // MARK: - Plumbing
 
-    private func run(_ executable: String, _ arguments: [String], completion: @escaping (ShellProcess.Outcome) -> Void) {
-        let process = ShellProcess(executable: executable, arguments: arguments, environment: ProcessInfo.processInfo.environment)
+    private func run(
+        _ executable: String,
+        _ arguments: [String],
+        store: StudioStore? = nil,
+        completion: @escaping (ShellProcess.Outcome) -> Void
+    ) {
+        // dpkg runs maintainer scripts and helpers; they find `sh` and friends
+        // through PATH, which the app's own environment does not provide.
+        let environment = store?.commandEnvironment() ?? ProcessInfo.processInfo.environment
+        let process = ShellProcess(executable: executable, arguments: arguments, environment: environment)
         self.process = process
         do {
             try process.run(onLine: { [weak self] line in

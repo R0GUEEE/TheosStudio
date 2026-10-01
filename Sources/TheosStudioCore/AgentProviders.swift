@@ -188,29 +188,63 @@ public enum AgentModelList {
         "stable-diffusion", "sora", "veo", "imagen",
     ]
 
+    /// Reads whatever the provider sent.
+    ///
+    /// The protocol says `{"data": [{"id": …}]}`, and most providers comply.
+    /// DeepSeek and others ship no name or context length; some gateways nest the
+    /// array under `models`; a few local servers return a bare array. Failing to
+    /// read a list that is *nearly* the right shape is the difference between a
+    /// picker and a typed model name, so all of those are accepted, and an entry
+    /// without any identifier is skipped rather than failing the whole response.
     public static func decode(_ data: Data) throws -> [AgentModel] {
-        struct Response: Decodable {
-            struct Item: Decodable {
-                let id: String
-                let name: String?
-                let display_name: String?
-                let context_length: Int?
+        struct Item: Decodable {
+            var identifier: String?
+            var displayName: String?
+            var contextLength: Int?
+
+            private enum Keys: String, CodingKey {
+                case id, model, name
+                case displayName = "display_name"
+                case contextLength = "context_length"
             }
-            let data: [Item]
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: Keys.self)
+                identifier = (try? container.decodeIfPresent(String.self, forKey: .id))
+                    ?? (try? container.decodeIfPresent(String.self, forKey: .model))
+                    ?? nil
+                displayName = (try? container.decodeIfPresent(String.self, forKey: .displayName))
+                    ?? (try? container.decodeIfPresent(String.self, forKey: .name))
+                    ?? nil
+                if let number = try? container.decodeIfPresent(Int.self, forKey: .contextLength) {
+                    contextLength = number
+                } else if let text = try? container.decodeIfPresent(String.self, forKey: .contextLength) {
+                    // Some servers send the context window as a string.
+                    contextLength = Int(text)
+                } else {
+                    contextLength = nil
+                }
+            }
         }
 
-        let response: Response
-        do {
-            response = try JSONDecoder().decode(Response.self, from: data)
-        } catch {
-            // Some gateways return a bare array.
-            if let items = try? JSONDecoder().decode([Response.Item].self, from: data) {
-                return items.map { AgentModel(id: $0.id, displayName: $0.name ?? $0.display_name, contextLength: $0.context_length) }
-            }
-            throw error
+        struct DataKeyed: Decodable { let data: [Item] }
+        struct ModelsKeyed: Decodable { let models: [Item] }
+
+        var items: [Item]?
+        if let response = try? JSONDecoder().decode(DataKeyed.self, from: data) {
+            items = response.data
+        } else if let response = try? JSONDecoder().decode(ModelsKeyed.self, from: data) {
+            items = response.models
+        } else if let bare = try? JSONDecoder().decode([Item].self, from: data) {
+            items = bare
         }
-        return response.data.map {
-            AgentModel(id: $0.id, displayName: $0.name ?? $0.display_name, contextLength: $0.context_length)
+
+        guard let items else {
+            throw SDKFetchError.malformed
+        }
+        return items.compactMap { item in
+            guard let identifier = item.identifier, !identifier.isEmpty else { return nil }
+            return AgentModel(id: identifier, displayName: item.displayName, contextLength: item.contextLength)
         }
     }
 
@@ -232,6 +266,23 @@ public enum AgentModelList {
             unique.append(model)
         }
         return unique.sorted { $0.id.localizedStandardCompare($1.id) == .orderedAscending }
+    }
+
+    /// What to say about a model the assistant should not be pointed at without
+    /// knowing the cost.
+    ///
+    /// The assistant works by calling tools, and some models do not accept tool
+    /// definitions at all — DeepSeek's own reasoning model is the well-known case,
+    /// and it fails every turn rather than degrading. Saying so at the point of
+    /// choosing beats an unexplained 400 later.
+    public static func toolCallingCaveat(for modelID: String) -> String? {
+        let identifier = modelID.lowercased()
+        let looksReasoning = identifier.contains("deepseek-reasoner")
+            || identifier.contains("reasoning")
+            || identifier.contains("-r1")
+            || identifier.hasSuffix("r1")
+        guard looksReasoning else { return nil }
+        return "Reasoning models do not all accept tool definitions, and the assistant needs them. If a turn fails with an error mentioning tools, switch to a general chat model — deepseek-chat, for instance."
     }
 
     /// The suggestions a provider ships, as full models.

@@ -46,5 +46,21 @@
 	<true/>
 	<key>get-task-allow</key>
 	<true/>
+
+	<!--
+	  application-identifier / keychain-access-groups
+	  Without these, securityd refuses every keychain operation from an ad-hoc
+	  signed app and SecItemAdd fails with errSecMissingEntitlement (-34018) — which
+	  is exactly what "the API key is not saving" looks like. The group is the app's
+	  own bundle identifier, so nothing else can read the key.
+	-->
+	<key>application-identifier</key>
+	<string>com.r0gueee.theosstudio</string>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>com.r0gueee.theosstudio</string>
+	</array>
+	<key>com.apple.developer.team-identifier</key>
+	<string>R0GUEEE</string>
 </dict>
 </plist>
