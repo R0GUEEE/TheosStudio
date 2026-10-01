@@ -103,6 +103,13 @@ enum Paths {
     static var defaultProjectsDirectory: String {
         documents + "/Projects"
     }
+
+    /// Declarative plugin manifests live outside the app bundle so they can be
+    /// added with Files, Filza, git or any package manager without rebuilding
+    /// TheosStudio.
+    static var defaultPluginsDirectory: String {
+        documents + "/TheosStudio/Plugins"
+    }
 }
 
 extension UIApplication {
