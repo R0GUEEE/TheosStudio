@@ -235,8 +235,8 @@ final class PluginActionRunner: ObservableObject {
     private var process: ShellProcess?
 
     func run(plugin: InstalledPlugin, action: PluginAction, project: Project?, store: StudioStore) {
-        guard case .running = phase else {
-            lines = []
+        guard phase != .running else { return }
+        lines = []
             let context = PluginInvocationContext(
                 projectPath: project?.path,
                 packagePath: project?.builtPackage,
@@ -280,8 +280,6 @@ final class PluginActionRunner: ObservableObject {
                 phase = .failed(error.localizedDescription)
                 process = nil
             }
-            return
-        }
     }
 
     func cancel() {
@@ -511,6 +509,19 @@ struct PluginConsoleView: View {
                 .padding()
 
                 Divider()
+                if action.destructive, runner.phase == .idle {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("This action can modify or delete data.", systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(.orange)
+                        Text("Review the command, then tap Run. Destructive plugin actions never start automatically.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    Divider()
+                }
                 ConsoleText(lines: runner.lines)
             }
             .navigationTitle("Plugin")
@@ -528,7 +539,9 @@ struct PluginConsoleView: View {
                 }
             }
             .onAppear {
-                runner.run(plugin: plugin, action: action, project: project, store: store)
+                if !action.destructive {
+                    runner.run(plugin: plugin, action: action, project: project, store: store)
+                }
             }
         }
         .navigationViewStyle(.stack)
