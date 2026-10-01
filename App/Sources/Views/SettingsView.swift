@@ -112,7 +112,9 @@ struct SettingsView: View {
                     NavigationLink(destination: AgentSettingsView(store: store) { }) {
                         VStack(alignment: .leading, spacing: 2) {
                             Label("Assistant", systemImage: "sparkles")
-                            Text(store.agent.isConfigured ? store.agent.model : "Not configured")
+                            Text(store.agent.isConfigured
+                                 ? "\(store.agent.provider.displayName) · \(store.agent.model)"
+                                 : "Not configured")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }

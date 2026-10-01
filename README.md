@@ -106,9 +106,21 @@ to match, a tweak with no hooking library in `Depends` installs and does nothing
 never fires** — so a private class name is something to confirm, not to assume —
 and a rootless package must never hardcode `/Library` or `/usr`.
 
-**Setup:** Settings → Assistant. Any OpenAI-compatible `/chat/completions`
-endpoint (OpenAI, a gateway, a machine on your LAN), a model name, and an API key.
-The key is stored in the keychain and sent only to that endpoint.
+**Setup** (Assistant tab → Set up the model, or Settings → Assistant):
+
+1. **Pick a provider** — OpenAI, DeepSeek, OpenRouter, Anthropic, Google Gemini,
+   Groq, Mistral, xAI, Together, a local Ollama or LM Studio, or a custom endpoint.
+   The base URL fills itself in.
+2. **Paste an API key** — stored in the keychain under that provider's name, so
+   switching providers does not overwrite it, and never written to the settings
+   file. Local endpoints need no key.
+3. **Load the model list** — one request to `/models` fills a picker with the
+   provider's own models, filtered to the ones that can hold a conversation
+   (embeddings, speech and image models are not offered as coding agents). The
+   endpoint and model you choose are remembered per provider.
+
+A **Test the connection** button sends the same short request the assistant uses,
+so a green result means the next thing you type will work.
 
 **What each request sends:** the project's text files (Makefile, control, Logos
 sources, plists, README), the last build's diagnostics, and the conversation.

@@ -93,6 +93,38 @@ final class AgentClient {
         return message
     }
 
+    /// `GET /models`, filtered to the models that can hold a conversation.
+    ///
+    /// This is what makes the model field a picker instead of a guess: every
+    /// provider that speaks this protocol lists its own models, and the list is
+    /// the only thing that is correct on the day it is fetched.
+    func models(settings: AgentSettings, apiKey: String) async throws -> [AgentModel] {
+        guard let url = settings.modelsEndpoint else { throw Failure.notConfigured }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if !apiKey.isEmpty {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw Failure.transport(error.localizedDescription)
+        }
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw Failure.http(status: http.statusCode, body: String(decoding: data.prefix(300), as: UTF8.self))
+        }
+        do {
+            return AgentModelList.chatModels(try AgentModelList.decode(data))
+        } catch {
+            throw Failure.malformed("the model list was not in the expected shape — \(String(decoding: data.prefix(160), as: UTF8.self))")
+        }
+    }
+
     /// A cheap way to check a key without spending a turn: ask for a one-line
     /// completion.
     func verify(settings: AgentSettings, apiKey: String) async throws -> String {

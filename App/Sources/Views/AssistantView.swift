@@ -26,6 +26,10 @@ struct AssistantView: View {
             VStack(spacing: 0) {
                 if store.projects.isEmpty {
                     emptyState
+                } else if !session.isConfigured {
+                    header
+                    Divider()
+                    setupCard
                 } else {
                     header
                     Divider()
@@ -94,6 +98,52 @@ struct AssistantView: View {
 
     // MARK: - Pieces
 
+    /// Shown instead of the transcript until there is a model to talk to. The
+    /// steps are the setup screen's order, because that is the order that works.
+    private var setupCard: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Label("Set up a model", systemImage: "sparkles").font(.headline)
+                Text("The assistant works with any OpenAI-compatible endpoint, with a key of your own. Three steps:")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    setupStep(1, "Pick a provider", "OpenAI, DeepSeek, OpenRouter, a local Ollama — or a custom endpoint.")
+                    setupStep(2, "Paste an API key", "Kept in the keychain, sent only to that provider.")
+                    setupStep(3, "Load the model list", "The provider's own list is fetched, so the model is picked, not typed.")
+                }
+
+                Button {
+                    isShowingSettings = true
+                } label: {
+                    Label("Set up the assistant", systemImage: "gearshape")
+                }
+                .buttonStyle(.borderedProminent)
+
+                Text("Until then, everything else in the app works: projects, the editor, building and installing.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func setupStep(_ number: Int, _ title: String, _ detail: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("\(number)")
+                .font(.caption.weight(.bold))
+                .frame(width: 20, height: 20)
+                .background(Color.accentColor.opacity(0.2))
+                .clipShape(Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.weight(.medium))
+                Text(detail).font(.caption).foregroundColor(.secondary)
+            }
+        }
+    }
+
     private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "sparkles").font(.largeTitle).foregroundColor(.secondary)
@@ -116,6 +166,7 @@ struct AssistantView: View {
                 }
                 Spacer()
                 if session.isConfigured {
+                    StatusChip(text: store.agent.provider.displayName, color: .secondary)
                     StatusChip(text: store.agent.model, color: .green)
                 } else {
                     Button("Set up the model") { isShowingSettings = true }
@@ -207,7 +258,10 @@ struct AssistantView: View {
     // MARK: - Wiring
 
     private func configureSession() {
-        session.configure(settings: store.agent, apiKey: AgentKeychain.load() ?? "")
+        session.configure(
+            settings: store.agent,
+            apiKey: AgentKeychain.load(for: store.agent.providerID) ?? ""
+        )
     }
 
     private func sendDraft() {

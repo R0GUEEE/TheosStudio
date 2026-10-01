@@ -262,7 +262,11 @@ final class AgentSession: ObservableObject {
     private var lastBuildSummary: String?
     private var task: Task<Void, Never>?
 
-    var isConfigured: Bool { settings.isConfigured && !apiKey.isEmpty }
+    /// A local endpoint (Ollama, LM Studio) needs no key, so "no key" is only a
+    /// problem for a provider that asks for one.
+    var isConfigured: Bool {
+        settings.isConfigured && (!settings.provider.requiresKey || !apiKey.isEmpty)
+    }
 
     func configure(settings: AgentSettings, apiKey: String) {
         self.settings = settings
