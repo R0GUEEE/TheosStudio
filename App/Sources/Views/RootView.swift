@@ -41,6 +41,11 @@ struct RootView: View {
         }
         .environmentObject(plugins)
         .tint(.indigo)
+        .onChange(of: store.requestedTab) { requested in
+            guard let requested else { return }
+            selection = requested
+            store.requestedTab = nil
+        }
         .alert(item: $store.banner) { message in
             Alert(
                 title: Text(message.title),

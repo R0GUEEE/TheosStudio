@@ -10,6 +10,7 @@ import TheosStudioCore
 struct AssistantView: View {
 
     @ObservedObject var store: StudioStore
+    @EnvironmentObject private var plugins: PluginManager
     @StateObject private var session = AgentSession()
     @StateObject private var runner = BuildRunner()
     @StateObject private var installer = PackageInstaller()
@@ -107,6 +108,8 @@ struct AssistantView: View {
             .onAppear {
                 configureSession()
                 if store.assistantProjectPath == nil { store.assistantProjectPath = store.projects.first?.path }
+                installer.refreshInstalled(store: store)
+                plugins.reload()
             }
         }
         .navigationViewStyle(.stack)
@@ -200,7 +203,7 @@ struct AssistantView: View {
             case .failed(let message):
                 Text(message).font(.caption).foregroundColor(.red)
             case .idle:
-                Text("Reads are free. Every edit, build and install stops here for approval.")
+                Text("Reads are free. Edits, builds, installs, plugin runs and restarts follow your approval policy.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -276,11 +279,14 @@ struct AssistantView: View {
     }
 
     private static let prompts = [
+        "Audit this project with health checks, metrics, package state and git status.",
         "Build the project and fix what fails.",
+        "Inspect the built package and verify its rootless/rootful layout.",
+        "Check launch targets and help me test this tweak with the smallest restart.",
+        "Review the enabled plugins and use one if it helps diagnose this project.",
         "Review Tweak.x and tell me what could go wrong on this iOS version.",
         "Add a switch to the preference bundle that disables the tweak.",
         "Make the injection filter narrower and explain the change.",
-        "Explain what this tweak does, in one paragraph.",
     ]
 
     // MARK: - Wiring
@@ -367,9 +373,203 @@ struct AssistantView: View {
             searchHeaders: { query in
                 await headers.searchOrIndex(query, roots: headerRoots)
             },
+            workspaceStatus: { workspaceStatus(project: project) },
+            projectHealth: { projectHealthText(project: project) },
+            projectStats: { projectStatsText(project: project) },
+            launchTargets: { launchTargetsText(project: project) },
+            inspectPackage: { await packageInspectionText(project: project) },
+            installedPackages: { query in installedPackagesText(query: query) },
+            plugins: { pluginsText(project: project) },
+            runPlugin: { pluginID, actionID in
+                await runPlugin(pluginID: pluginID, actionID: actionID, project: project)
+            },
+            restartTarget: { name in await restartTarget(name, project: project) },
             privilegesCanEscalate: store.privileges.canEscalate,
             toolchainSummary: toolchainSummary
         )
+    }
+
+    private func workspaceStatus(project: Project) -> String {
+        var lines = [
+            "Projects: \(store.projects.count)",
+            "Selected: \(project.name) [\(project.displayScheme)]",
+            "Privileges: \(store.privileges.summary)",
+            "Enabled plugins: \(plugins.enabledPlugins.count)",
+            "Installed packages indexed: \(installer.installed.count)",
+        ]
+        lines.append(contentsOf: store.projects.prefix(20).map { candidate in
+            let marker = candidate.path == project.path ? "*" : "-"
+            return "\(marker) \(candidate.name) · \(candidate.kind?.displayName ?? "unknown") · \(candidate.displayScheme) · \(candidate.version ?? "no version")"
+        })
+        if let report = store.toolchain {
+            lines.append("Theos: \(report.theosRoot ?? "not found")")
+            lines.append("SDKs: \(report.sdkDirectories.count)")
+            let missing = report.missingRequired.map(\.tool.name)
+            if !missing.isEmpty { lines.append("Missing required tools: " + missing.joined(separator: ", ")) }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func textFiles(project: Project) -> [ProjectFile] {
+        FS.projectEntries(at: project.path, depth: 8)
+            .filter { !$0.isDirectory && $0.isProbablyText && $0.size <= 1024 * 1024 }
+            .compactMap { entry in
+                FS.read(project.path + "/" + entry.relativePath).map {
+                    ProjectFile(path: entry.relativePath, contents: $0)
+                }
+            }
+    }
+
+    private func projectHealthText(project: Project) -> String {
+        let issues = ProjectHealth.inspect(files: textFiles(project: project))
+        guard !issues.isEmpty else { return "No project-level health issues found." }
+        return issues.map { issue in
+            let path = issue.path.map { " [\($0)]" } ?? ""
+            return "\(issue.severity.rawValue.uppercased())\(path): \(issue.message)"
+        }.joined(separator: "\n")
+    }
+
+    private func projectStatsText(project: Project) -> String {
+        let metrics = ProjectMetrics.calculate(files: textFiles(project: project))
+        var lines = [
+            "Text files: \(metrics.textFileCount)",
+            "Lines: \(metrics.lineCount)",
+            "Non-blank lines: \(metrics.nonBlankLineCount)",
+            "Text bytes: \(metrics.bytes)",
+        ]
+        if !metrics.languages.isEmpty {
+            lines.append("Languages: " + metrics.languages.keys.sorted().map { "\($0)=\(metrics.languages[$0] ?? 0)" }.joined(separator: ", "))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func currentLaunchTargets(project: Project) -> [LaunchTarget] {
+        let makefile = FS.read(project.path + "/Makefile") ?? ""
+        let filter = FS.read(project.path + "/" + project.name + ".plist")
+        return LaunchTargets.targets(inMakefile: makefile, filterPlist: filter)
+    }
+
+    private func launchTargetsText(project: Project) -> String {
+        let targets = currentLaunchTargets(project: project)
+        guard !targets.isEmpty else { return "No restart targets were inferred from INSTALL_TARGET_PROCESSES or the injection filter." }
+        return targets.map { "\($0.name): \($0.detail)" }.joined(separator: "\n")
+    }
+
+    private func installedPackagesText(query: String?) -> String {
+        let trimmed = query?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        let matches = installer.installed.filter {
+            trimmed.isEmpty || $0.identifier.lowercased().contains(trimmed) || $0.name.lowercased().contains(trimmed)
+        }
+        guard !matches.isEmpty else {
+            return installer.installed.isEmpty
+                ? "No installed-package index is available yet. Refresh Installed Packages and try again."
+                : "No installed package matched \(query ?? "")."
+        }
+        return matches.prefix(100).map { "\($0.identifier) \($0.version)" }.joined(separator: "\n")
+    }
+
+    private func pluginsText(project: Project) -> String {
+        let enabled = plugins.enabledPlugins
+        guard !enabled.isEmpty else { return "No plugins are enabled." }
+        return enabled.map { plugin in
+            let actions = plugin.manifest.actions.filter { action in
+                !action.requiresProject || (!action.requiresPackage || project.builtPackage != nil)
+            }
+            let actionText = actions.map { "\($0.id): \($0.title)" }.joined(separator: ", ")
+            return "\(plugin.id) · \(plugin.manifest.name) · \(plugin.source.label)\n  \(actionText.isEmpty ? "no currently available actions" : actionText)"
+        }.joined(separator: "\n")
+    }
+
+    private func packageInspectionText(project: Project) async -> String {
+        guard let artifact = ArtifactLocator.newestPackage(
+            in: project.path,
+            listDirectory: FS.list,
+            modificationDate: FS.modificationDate
+        ) else { return "No built .deb exists for this project." }
+        guard let dpkgDeb = store.toolPaths(for: ["dpkg-deb"])["dpkg-deb"] else {
+            return "dpkg-deb is not installed, so the package cannot be inspected."
+        }
+        let info = await runTool(dpkgDeb, ["--info", artifact])
+        let contents = await runTool(dpkgDeb, ["--contents", artifact])
+        let rawContents = contents.components(separatedBy: "\n").dropFirst().joined(separator: "\n")
+        let entries = DebListing.parse(rawContents)
+        var lines = ["Package: \((artifact as NSString).lastPathComponent)"]
+        let scheme = project.scheme ?? store.settings.effectiveScheme
+        lines.append(contentsOf: DebListing.summary(entries: entries, control: ControlFile.parse(FS.read(project.path + "/control") ?? ""), scheme: scheme).map { "\($0.label): \($0.value)" })
+        let paths = DebListing.files(entries).prefix(40).map(\.installedPath)
+        if !paths.isEmpty { lines.append("Files:\n" + paths.joined(separator: "\n")) }
+        if !info.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            lines.append("dpkg-deb info:\n" + String(info.prefix(4000)))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func runPlugin(pluginID: String, actionID: String, project: Project) async -> String {
+        guard let plugin = plugins.enabledPlugins.first(where: { $0.id == pluginID }) else {
+            return "Error: plugin '\(pluginID)' is not enabled."
+        }
+        guard let action = plugin.manifest.actions.first(where: { $0.id == actionID }) else {
+            return "Error: plugin '\(pluginID)' has no action '\(actionID)'."
+        }
+        if action.requiresPackage && project.builtPackage == nil {
+            return "Error: this plugin action requires a built package."
+        }
+        let context = PluginInvocationContext(
+            projectPath: project.path,
+            projectName: project.name,
+            packageIdentifier: project.packageIdentifier,
+            packagingScheme: project.displayScheme,
+            packagePath: project.builtPackage,
+            theosPath: store.toolchain?.theosRoot,
+            homePath: NSHomeDirectory(),
+            pluginPath: plugin.source.rootPath
+        )
+        guard let command = PluginTokenExpander.expand(action.command, context: context), let requested = command.first else {
+            return "Error: the plugin needs context that is not available."
+        }
+        let executable: String?
+        if requested.hasPrefix("./"), let root = plugin.source.rootPath {
+            executable = root + "/" + String(requested.dropFirst(2))
+        } else if requested.hasPrefix("/") {
+            executable = requested
+        } else {
+            executable = store.toolPaths(for: [requested])[requested]
+        }
+        guard let executable, FS.fileExists(executable) else {
+            return "Error: executable '\(requested)' was not found."
+        }
+        return await runTool(executable, Array(command.dropFirst()))
+    }
+
+    private func runTool(_ executable: String, _ arguments: [String]) async -> String {
+        await withCheckedContinuation { continuation in
+            var output = ""
+            let process = ShellProcess(executable: executable, arguments: arguments, environment: store.commandEnvironment())
+            do {
+                try process.run(onLine: { line in output += line + "\n" }, onExit: { outcome in
+                    if output.isEmpty { output = outcome.output }
+                    continuation.resume(returning: "Exit \(outcome.status)\n" + String(output.prefix(12000)))
+                })
+            } catch {
+                continuation.resume(returning: "Error: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func restartTarget(_ name: String, project: Project) async -> String {
+        let allowed = currentLaunchTargets(project: project).map(\.name)
+        guard allowed.contains(name) else {
+            return "Error: '\(name)' is not one of this project's launch targets: \(allowed.joined(separator: ", "))."
+        }
+        return await withCheckedContinuation { continuation in
+            var resumed = false
+            installer.onResult = { ok, message in
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume(returning: ok ? message : "Error: " + message)
+            }
+            installer.restart(name, store: store)
+        }
     }
 
     /// The same sources the Find a hook screen uses: every SDK Theos has, plus

@@ -29,6 +29,8 @@ struct AgentSettings: Codable, Equatable {
     var preferences: Set<AgentPreference> = []
     /// Which tools are offered at all.
     var enabledTools: Set<String> = AgentToolCatalog.names
+    /// Used only to enable capabilities introduced after a user already saved settings.
+    var toolCatalogVersion: Int = 2
     var contextMode: AgentContextMode = .fullFiles
     /// Characters of project content per request.
     var contextBudget: Int = 60_000
@@ -124,7 +126,7 @@ struct AgentSettings: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case providerID, baseURL, model, temperature, extraInstructions
         case maxToolCallsPerTurn, runtimes
-        case approvals, preferences, enabledTools, contextMode, contextBudget, maxTokens
+        case approvals, preferences, enabledTools, toolCatalogVersion, contextMode, contextBudget, maxTokens
         case streamsResponses, extraBodyJSON
     }
 
@@ -135,8 +137,7 @@ struct AgentSettings: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
         func value<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
-            guard let decoded = try? container.decodeIfPresent(T.self, forKey: key) else { return fallback }
-            return decoded ?? fallback
+            (try? container.decodeIfPresent(T.self, forKey: key)) ?? fallback
         }
 
         providerID = value(.providerID, AgentProvider.initial.id)
@@ -149,6 +150,14 @@ struct AgentSettings: Codable, Equatable {
         approvals = value(.approvals, .askForChanges)
         preferences = value(.preferences, [])
         enabledTools = value(.enabledTools, AgentToolCatalog.names)
+        let storedToolCatalogVersion: Int = value(.toolCatalogVersion, 1)
+        if storedToolCatalogVersion < 2 {
+            enabledTools.formUnion([
+                "workspace_status", "project_health", "project_stats", "list_launch_targets",
+                "inspect_package", "installed_packages", "list_plugins", "run_plugin", "restart_target",
+            ])
+        }
+        toolCatalogVersion = 2
         contextMode = value(.contextMode, .fullFiles)
         contextBudget = value(.contextBudget, 60_000)
         maxTokens = value(.maxTokens, 0)

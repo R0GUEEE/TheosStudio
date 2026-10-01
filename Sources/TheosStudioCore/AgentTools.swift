@@ -20,6 +20,15 @@ public enum AgentAction: Equatable, Sendable {
     /// Class and method declarations from the SDK headers and the user's own
     /// header dump.
     case searchHeaders(query: String)
+    case workspaceStatus
+    case projectHealth
+    case projectStats
+    case listLaunchTargets
+    case inspectPackage
+    case installedPackages(query: String?)
+    case listPlugins
+    case runPlugin(pluginID: String, actionID: String)
+    case restartTarget(name: String)
     case finish(summary: String)
     /// Anything unrecognised, with the reason to hand back to the model. A tool
     /// call the app cannot parse is a prompt for a retry, not a crash.
@@ -38,6 +47,15 @@ public enum AgentAction: Equatable, Sendable {
         case .gitStatus: return "git_status"
         case .gitDiff: return "git_diff"
         case .searchHeaders: return "search_headers"
+        case .workspaceStatus: return "workspace_status"
+        case .projectHealth: return "project_health"
+        case .projectStats: return "project_stats"
+        case .listLaunchTargets: return "list_launch_targets"
+        case .inspectPackage: return "inspect_package"
+        case .installedPackages: return "installed_packages"
+        case .listPlugins: return "list_plugins"
+        case .runPlugin: return "run_plugin"
+        case .restartTarget: return "restart_target"
         case .finish: return "finish"
         case .unknown(let name, _): return name
         }
@@ -68,6 +86,24 @@ public enum AgentAction: Equatable, Sendable {
             return "Search the headers for “\(query)”"
         case .gitDiff(let path):
             return path.map { "Read the diff of \($0)" } ?? "Read the diff of every change"
+        case .workspaceStatus:
+            return "Inspect workspace and device status"
+        case .projectHealth:
+            return "Analyze project health"
+        case .projectStats:
+            return "Read project metrics"
+        case .listLaunchTargets:
+            return "List restart targets"
+        case .inspectPackage:
+            return "Inspect the built package"
+        case .installedPackages(let query):
+            return query.map { "Search installed packages for “\($0)”" } ?? "List installed packages"
+        case .listPlugins:
+            return "List enabled plugins and actions"
+        case .runPlugin(let pluginID, let actionID):
+            return "Run plugin \(pluginID) / \(actionID)"
+        case .restartTarget(let name):
+            return "Restart \(name)"
         case .finish(let summary):
             return "Finish: \(summary)"
         case .unknown(let name, let reason):
@@ -156,6 +192,32 @@ public enum AgentActionParser {
                 return .unknown(name: call.name, reason: "search_headers needs a 'query' — a class or method name.")
             }
             return .searchHeaders(query: query)
+
+        case "workspace_status":
+            return .workspaceStatus
+        case "project_health":
+            return .projectHealth
+        case "project_stats":
+            return .projectStats
+        case "list_launch_targets":
+            return .listLaunchTargets
+        case "inspect_package":
+            return .inspectPackage
+        case "installed_packages":
+            return .installedPackages(query: string("query"))
+        case "list_plugins":
+            return .listPlugins
+        case "run_plugin":
+            guard let pluginID = string("plugin_id"), !pluginID.isEmpty,
+                  let actionID = string("action_id"), !actionID.isEmpty else {
+                return .unknown(name: call.name, reason: "run_plugin needs 'plugin_id' and 'action_id'")
+            }
+            return .runPlugin(pluginID: pluginID, actionID: actionID)
+        case "restart_target":
+            guard let name = string("name"), !name.isEmpty else {
+                return .unknown(name: call.name, reason: "restart_target needs a process name")
+            }
+            return .restartTarget(name: name)
 
         case "finish":
             guard let summary = string("summary") else {
@@ -272,6 +334,64 @@ public enum AgentToolCatalog {
             parameters: .schema(
                 properties: ["path": .property("string", "Optional path relative to the project root.")],
                 required: []
+            )
+        ),
+
+        AgentTool(
+            name: "workspace_status",
+            description: "Read app-wide status: known projects, selected project, toolchain, SDKs, privileges and plugin availability. Use this when diagnosing the environment rather than source code.",
+            parameters: .schema(properties: [:], required: [])
+        ),
+        AgentTool(
+            name: "project_health",
+            description: "Run TheosStudio's structural project health analysis: control validation, missing Makefile sources, unlisted sources and build-output notes.",
+            parameters: .schema(properties: [:], required: [])
+        ),
+        AgentTool(
+            name: "project_stats",
+            description: "Read project metrics including text-file count, lines, nonblank lines, size and language distribution.",
+            parameters: .schema(properties: [:], required: [])
+        ),
+        AgentTool(
+            name: "list_launch_targets",
+            description: "List processes this project can restart based on INSTALL_TARGET_PROCESSES and its injection filter.",
+            parameters: .schema(properties: [:], required: [])
+        ),
+        AgentTool(
+            name: "inspect_package",
+            description: "Inspect the newest built .deb: path, metadata and packaged files. Use this before claiming what a package installs.",
+            parameters: .schema(properties: [:], required: [])
+        ),
+        AgentTool(
+            name: "installed_packages",
+            description: "List installed Debian packages, optionally filtered by identifier text.",
+            parameters: .schema(
+                properties: ["query": .property("string", "Optional identifier substring.")],
+                required: []
+            )
+        ),
+        AgentTool(
+            name: "list_plugins",
+            description: "List enabled TheosStudio plugins and their available actions for this project.",
+            parameters: .schema(properties: [:], required: [])
+        ),
+        AgentTool(
+            name: "run_plugin",
+            description: "Run one enabled plugin action by plugin id and action id. This always goes through approval because plugins can execute external tools.",
+            parameters: .schema(
+                properties: [
+                    "plugin_id": .property("string", "Plugin manifest id."),
+                    "action_id": .property("string", "Action id from list_plugins.")
+                ],
+                required: ["plugin_id", "action_id"]
+            )
+        ),
+        AgentTool(
+            name: "restart_target",
+            description: "Restart one process exposed by list_launch_targets after a successful install or when the user explicitly asks to test a hook.",
+            parameters: .schema(
+                properties: ["name": .property("string", "Exact process name from list_launch_targets.")],
+                required: ["name"]
             )
         ),
         AgentTool(
