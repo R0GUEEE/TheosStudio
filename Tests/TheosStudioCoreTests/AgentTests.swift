@@ -14,7 +14,9 @@ final class AgentActionTests: XCTestCase {
         let expected: Set<String> = [
             "list_files", "read_file", "write_file", "replace_in_file",
             "update_control", "build", "install", "read_crashes", "git_status",
-            "git_diff", "search_headers", "finish",
+            "git_diff", "search_headers", "workspace_status", "project_health",
+            "project_stats", "list_launch_targets", "inspect_package", "installed_packages",
+            "list_plugins", "run_plugin", "restart_target", "finish",
         ]
         XCTAssertEqual(AgentToolCatalog.names, expected)
 
@@ -27,6 +29,8 @@ final class AgentActionTests: XCTestCase {
             case "update_control": arguments = #"{"key":"Version","value":"1.0"}"#
             case "finish": arguments = #"{"summary":"done"}"#
             case "search_headers": arguments = #"{"query":"SBIconView"}"#
+            case "run_plugin": arguments = #"{"plugin_id":"builtin.git-tools","action_id":"git-status"}"#
+            case "restart_target": arguments = #"{"name":"SpringBoard"}"#
             default: arguments = "{}"
             }
             let action = AgentActionParser.parse(call(name, arguments))
@@ -81,6 +85,27 @@ final class AgentActionTests: XCTestCase {
             return XCTFail("expected unknown, got \(missingQuery)")
         }
         XCTAssertTrue(reason.contains("query"))
+    }
+
+    func testAppIntegrationToolsParseAndGateMutations() {
+        XCTAssertEqual(AgentActionParser.parse(call("workspace_status", "{}")), .workspaceStatus)
+        XCTAssertEqual(AgentActionParser.parse(call("project_health", "{}")), .projectHealth)
+        XCTAssertEqual(AgentActionParser.parse(call("project_stats", "{}")), .projectStats)
+        XCTAssertEqual(AgentActionParser.parse(call("list_launch_targets", "{}")), .listLaunchTargets)
+        XCTAssertEqual(AgentActionParser.parse(call("inspect_package", "{}")), .inspectPackage)
+        XCTAssertEqual(
+            AgentActionParser.parse(call("installed_packages", #"{"query":"ellekit"}"#)),
+            .installedPackages(query: "ellekit")
+        )
+        XCTAssertEqual(AgentActionParser.parse(call("list_plugins", "{}")), .listPlugins)
+        XCTAssertEqual(
+            AgentActionParser.parse(call("run_plugin", #"{"plugin_id":"builtin.git-tools","action_id":"git-status"}"#)),
+            .runPlugin(pluginID: "builtin.git-tools", actionID: "git-status")
+        )
+        XCTAssertEqual(
+            AgentActionParser.parse(call("restart_target", #"{"name":"SpringBoard"}"#)),
+            .restartTarget(name: "SpringBoard")
+        )
     }
 
     func testBuildDefaultsToAFinalPackage() {
@@ -216,6 +241,24 @@ final class AgentPolicyTests: XCTestCase {
         }
     }
 
+    func testIntegratedReadsAreFreeButExecutionIsGated() {
+        XCTAssertEqual(decide(.workspaceStatus), .allowed)
+        XCTAssertEqual(decide(.projectHealth), .allowed)
+        XCTAssertEqual(decide(.projectStats), .allowed)
+        XCTAssertEqual(decide(.listLaunchTargets), .allowed)
+        XCTAssertEqual(decide(.inspectPackage), .allowed)
+        XCTAssertEqual(decide(.installedPackages(query: nil)), .allowed)
+        XCTAssertEqual(decide(.listPlugins), .allowed)
+        XCTAssertEqual(
+            decide(.runPlugin(pluginID: "builtin.git-tools", actionID: "git-status")),
+            .needsApproval(reason: "Run plugin action builtin.git-tools / git-status")
+        )
+        XCTAssertEqual(
+            decide(.restartTarget(name: "SpringBoard")),
+            .needsApproval(reason: "Restart SpringBoard")
+        )
+    }
+
     func testUnknownActionsAreRefusedWithTheParsersReason() {
         guard case .refused(let reason) = decide(.unknown(name: "read_file", reason: "read_file needs a 'path'")) else {
             return XCTFail("expected a refusal")
@@ -305,7 +348,8 @@ final class AgentContextTests: XCTestCase {
             version: "0.0.1",
             files: files,
             buildSummary: build,
-            toolchainSummary: "Theos at /var/mobile/Documents/Theos, SDKs: iPhoneOS16.5.sdk, privileges: root"
+            toolchainSummary: "Theos at /var/mobile/Documents/Theos, SDKs: iPhoneOS16.5.sdk, privileges: root",
+            appSummary: "Projects: 3\nEnabled plugins: 4"
         )
     }
 
@@ -366,6 +410,8 @@ final class AgentContextTests: XCTestCase {
         let withoutBuild = AgentContext.contextMessage(snapshot())
         XCTAssertTrue(withoutBuild.contains("No build has run"))
         XCTAssertTrue(withoutBuild.contains("## This device"))
+        XCTAssertTrue(withoutBuild.contains("## TheosStudio workspace"))
+        XCTAssertTrue(withoutBuild.contains("Enabled plugins: 4"))
 
         let withBuild = AgentContext.contextMessage(snapshot(build: "Tweak.x:12:5: error: use of undeclared identifier 'foo'"))
         XCTAssertTrue(withBuild.contains("use of undeclared identifier"))
