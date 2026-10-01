@@ -87,9 +87,11 @@ public struct InstallPreview: Equatable, Sendable {
 
     public var isClean: Bool { errors.isEmpty && conflicts.isEmpty }
 
+    /// A conflict is reported by dpkg as an error as well, and the conflict is
+    /// the half that says what to do about it — so it is quoted first.
     public var summary: String {
-        if !errors.isEmpty { return errors[0] }
-        if !conflicts.isEmpty { return conflicts[0] }
+        if let conflict = conflicts.first { return conflict }
+        if let error = errors.first { return error }
         if let replacing { return "Would replace \(replacing)." }
         return "Would install cleanly."
     }
