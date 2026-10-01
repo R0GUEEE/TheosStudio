@@ -18,6 +18,11 @@ func printUsage() {
       theosstudio new <kind> <Name> [opts]   scaffold a project
       theosstudio plan <project> [opts]      print the make command a build runs
       theosstudio lint <project>             control file problems, if any
+      theosstudio doctor <project>           whole-project health scan
+      theosstudio search <project> <query>   search all text files
+      theosstudio stats <project>            project size / language metrics
+      theosstudio bump <project> <part>      bump control Version (major/minor/patch/build)
+      theosstudio profiles                   list built-in build profiles
       theosstudio doctors <project>          alias of lint
       theosstudio help
 
@@ -35,9 +40,16 @@ func printUsage() {
 
     options for `plan`:
       --scheme <scheme>     override the packaging scheme
+      --profile <name>      debug | fast | release | rebuild
       --final               FINALPACKAGE=1 (optimised, stripped)
       --clean               clean first
       --jobs <n>            parallel make
+
+    options for `search`:
+      --regex               treat the query as a regular expression
+      --case                case-sensitive matching
+      --whole-word          only match complete words
+      --ext <csv>           restrict to file extensions, e.g. x,xm,m,swift
     """)
 }
 
@@ -66,6 +78,26 @@ func option(_ name: String, in arguments: [String]) -> String? {
 func flag(_ name: String, in arguments: [String]) -> Bool {
     arguments.contains(name)
 }
+
+func projectTextFiles(at root: String) -> [ProjectFile] {
+    let fm = FileManager.default
+    guard let enumerator = fm.enumerator(atPath: root) else { return [] }
+    var result: [ProjectFile] = []
+    while let relative = enumerator.nextObject() as? String {
+        let components = relative.split(separator: "/").map(String.init)
+        if components.contains(where: { ProjectFiles.hiddenDirectoryNames.contains($0) }) {
+            continue
+        }
+        let full = root + "/" + relative
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: full, isDirectory: &isDirectory), !isDirectory.boolValue else { continue }
+        guard let data = fm.contents(atPath: full), data.count <= 1024 * 1024,
+              let text = String(data: data, encoding: .utf8) else { continue }
+        result.append(ProjectFile(path: relative, contents: text))
+    }
+    return result
+}
+
 
 let home = NSHomeDirectory()
 let jailbreak = JailbreakLayout.detect(exists: directoryExists)
@@ -142,7 +174,7 @@ case "plan":
         home: home, override: nil, jailbreak: jailbreak, exists: fileExists, listDirectory: listDirectory
     )
     let scheme = option("--scheme", in: rest).flatMap(PackagingScheme.init(rawValue:)) ?? jailbreak.scheme
-    let request = BuildRequest(
+    var request = BuildRequest(
         projectPath: (project as NSString).expandingTildeInPath,
         scheme: scheme,
         finalPackage: flag("--final", in: rest),
@@ -150,6 +182,9 @@ case "plan":
         verbose: true,
         jobs: option("--jobs", in: rest).flatMap(Int.init)
     )
+    if let profileName = option("--profile", in: rest), let profile = BuildProfile(rawValue: profileName) {
+        request = profile.applying(to: request)
+    }
     let environment = report.theosRoot.map {
         TheosLocator.environment(theosRoot: $0, binDirectories: report.binDirectories, base: [:], home: home)
     } ?? [:]
@@ -160,6 +195,82 @@ case "plan":
     }
     if !report.isReadyToBuild {
         FileHandle.standardError.write(Data("warning: this device is not ready to build (see: theosstudio env)\n".utf8))
+    }
+
+
+case "doctor":
+    guard let project = rest.first else {
+        FileHandle.standardError.write(Data("usage: theosstudio doctor <project>\n".utf8))
+        exit(64)
+    }
+    let root = (project as NSString).expandingTildeInPath
+    let files = projectTextFiles(at: root)
+    let issues = ProjectHealth.inspect(files: files)
+    if issues.isEmpty {
+        print("healthy: no project-level problems found")
+    } else {
+        for issue in issues {
+            let location = issue.path.map { " [\($0)]" } ?? ""
+            print("\(issue.severity.rawValue):\(location) \(issue.message)")
+        }
+        if issues.contains(where: { $0.severity == .error }) { exit(1) }
+    }
+
+case "search":
+    guard rest.count >= 2 else {
+        FileHandle.standardError.write(Data("usage: theosstudio search <project> <query>\n".utf8))
+        exit(64)
+    }
+    let root = (rest[0] as NSString).expandingTildeInPath
+    let extensions = Set((option("--ext", in: rest) ?? "").split(separator: ",").map(String.init))
+    let options = ProjectSearchOptions(
+        caseSensitive: flag("--case", in: rest),
+        useRegex: flag("--regex", in: rest),
+        wholeWord: flag("--whole-word", in: rest),
+        fileExtensions: extensions
+    )
+    for match in AdvancedProjectSearch.search(query: rest[1], files: projectTextFiles(at: root), options: options) {
+        print("\(match.path):\(match.line):\(match.column): \(match.preview)")
+    }
+
+case "stats":
+    guard let project = rest.first else {
+        FileHandle.standardError.write(Data("usage: theosstudio stats <project>\n".utf8))
+        exit(64)
+    }
+    let root = (project as NSString).expandingTildeInPath
+    let metrics = ProjectMetrics.calculate(files: projectTextFiles(at: root))
+    print("files:      \(metrics.fileCount)")
+    print("lines:      \(metrics.lineCount)")
+    print("non-blank:  \(metrics.nonBlankLineCount)")
+    print("text bytes: \(metrics.bytes)")
+    for key in metrics.languages.keys.sorted() {
+        print("  \(key): \(metrics.languages[key] ?? 0)")
+    }
+
+case "bump":
+    guard rest.count >= 2, let part = VersionBumper.Part(rawValue: rest[1]) else {
+        FileHandle.standardError.write(Data("usage: theosstudio bump <project> <major|minor|patch|build>\n".utf8))
+        exit(64)
+    }
+    let root = (rest[0] as NSString).expandingTildeInPath
+    let path = root + "/control"
+    guard let source = try? String(contentsOfFile: path, encoding: .utf8) else {
+        FileHandle.standardError.write(Data("could not read \(path)\n".utf8))
+        exit(66)
+    }
+    let updated = VersionBumper.updatingControl(source, part: part)
+    do {
+        try updated.write(toFile: path, atomically: true, encoding: .utf8)
+        print(ControlFile.parse(updated).version ?? "updated")
+    } catch {
+        FileHandle.standardError.write(Data("failed to write \(path): \(error)\n".utf8))
+        exit(74)
+    }
+
+case "profiles":
+    for profile in BuildProfile.allCases {
+        print("\(profile.rawValue)\t\(profile.displayName)")
     }
 
 case "lint", "doctors":
