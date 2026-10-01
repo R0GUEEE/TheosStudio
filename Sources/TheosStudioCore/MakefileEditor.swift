@@ -135,9 +135,10 @@ public enum MakefileEditor {
         guard let range = assignmentRange(variable, in: makefile) else {
             return EditResult(text: makefile, changed: false, reason: "\(variable) is not in the Makefile.")
         }
+        // The range is the *value*, so only the value is replaced: writing
+        // "NAME = …" here would leave "NAME = NAME = …" behind.
         var text = makefile
-        let operatorText = makefile[range].contains(":=") ? ":=" : "="
-        text.replaceSubrange(range, with: "\(variable) \(operatorText) " + files.joined(separator: " "))
+        text.replaceSubrange(range, with: files.joined(separator: " "))
         return EditResult(text: text, changed: true)
     }
 

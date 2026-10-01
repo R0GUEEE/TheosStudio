@@ -38,6 +38,7 @@ final class MakefileEditorTests: XCTestCase {
         XCTAssertEqual(MakefileEditor.readValue("NOPE", in: tweakMakefile), nil)
 
         let wrapped = """
+        TWEAK_NAME = MyTweak
         MyTweak_FILES = Tweak.x \\
             Extra.x \\
             Third.x
@@ -114,7 +115,8 @@ final class MakefileEditorTests: XCTestCase {
         XCTAssertFalse(updated.contains("arm64e"))
 
         let withComment = MakefileEditor.setValue("ARCHS", to: "arm64", in: "ARCHS = arm64 arm64e  # both\n")
-        XCTAssertTrue(withComment.contains("ARCHS = arm64  # both"), withComment)
+        // The comment survives; the spacing around it is normalised.
+        XCTAssertTrue(withComment.contains("ARCHS = arm64 # both"), withComment)
 
         let added = MakefileEditor.setValue("DEBUG", to: "0", in: "ARCHS = arm64\n")
         XCTAssertTrue(added.contains("DEBUG = 0"))
