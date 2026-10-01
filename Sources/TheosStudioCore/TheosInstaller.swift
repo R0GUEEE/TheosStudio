@@ -115,6 +115,20 @@ public struct TheosInstallPlan: Equatable, Sendable {
     public var needsRoot: Bool { steps.contains { $0.requiresRoot } }
 }
 
+public enum SDKFetchError: LocalizedError {
+    case noAssets
+    case malformed
+
+    public var errorDescription: String? {
+        switch self {
+        case .noAssets:
+            return "The theos/sdks release has no iPhoneOS SDK asset."
+        case .malformed:
+            return "The response was not a model list this app can read. It expects {\"data\":[{\"id\": …}]}, which is what the OpenAI protocol specifies."
+        }
+    }
+}
+
 /// Plans an on-device Theos installation.
 ///
 /// This mirrors what the official installer does on a jailbroken device, split
