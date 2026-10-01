@@ -39,6 +39,7 @@ struct ProjectDetailView: View {
             filesSection
             buildSection
             packageSection
+            restartSection
             toolsSection
             problemsSection
         }
@@ -364,11 +365,6 @@ struct ProjectDetailView: View {
                     } label: {
                         Label("Share or open in Sileo", systemImage: "square.and.arrow.up")
                     }
-                    Button {
-                        installer.respring(store: store)
-                    } label: {
-                        Label("Respring", systemImage: "arrow.triangle.2.circlepath")
-                    }
                 }
 
                 if case .failed(let reason) = installer.phase {
@@ -396,8 +392,54 @@ struct ProjectDetailView: View {
         }
     }
 
+    private var launchTargets: [LaunchTarget] {
+        let makefile = FS.read(current.path + "/Makefile") ?? ""
+        let filterName = current.path + "/" + current.name + ".plist"
+        return LaunchTargets.targets(inMakefile: makefile, filterPlist: FS.read(filterName))
+    }
+
+    @ViewBuilder
+    private var restartSection: some View {
+        if current.builtPackage != nil || !launchTargets.isEmpty {
+            Section {
+                if current.builtPackage != nil {
+                    Button {
+                        installer.respring(store: store)
+                    } label: {
+                        Label("Respring", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .disabled(installer.phase.isRunning)
+                }
+                ForEach(launchTargets) { target in
+                    Button {
+                        installer.restart(target.name, store: store)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label("Restart \(target.name)", systemImage: "arrow.clockwise.circle")
+                            Text(target.detail).font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+                    .disabled(installer.phase.isRunning)
+                }
+                if case .working(let what) = installer.phase {
+                    HStack {
+                        ProgressView().scaleEffect(0.7)
+                        Text("\(what)…").font(.footnote).foregroundColor(.secondary)
+                    }
+                }
+            } header: {
+                Text("Restart")
+            } footer: {
+                Text("Restarting one process is how you test a hook inside an app; a respring is for hooks in SpringBoard. The list comes from the project's own Makefile and injection filter.")
+            }
+        }
+    }
+
     private var toolsSection: some View {
         Section {
+            NavigationLink(destination: HeaderSearchView(store: store, project: current)) {
+                Label("Find a hook", systemImage: "magnifyingglass")
+            }
             NavigationLink(destination: SourceControlView(store: store, project: current)) {
                 Label("Source control", systemImage: "arrow.triangle.branch")
             }

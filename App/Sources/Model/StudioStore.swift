@@ -22,6 +22,9 @@ struct StudioSettings: Codable, Equatable {
     var editorFontSize: Double = 13
     var respringAfterInstall: Bool = true
     var lastProjectPath: String?
+    /// Folders to search for class and method declarations — typically a dump of
+    /// private headers. The SDK headers are found through Theos, not here.
+    var headerSearchFolders: [String] = []
 
     var effectiveScheme: PackagingScheme {
         defaultScheme ?? .rootless

@@ -51,6 +51,17 @@ struct CodeEditorView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Section("Append a snippet") {
+                        ForEach(SnippetLibrary.all) { snippet in
+                            Button(snippet.title) { append(snippet) }
+                        }
+                    }
+                } label: {
+                    Label("Snippets", systemImage: "text.badge.plus")
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button("Save", action: save).disabled(!isModified)
             }
         }
@@ -76,6 +87,17 @@ struct CodeEditorView: View {
         } else {
             loadFailure = "Could not read \(path) as text. It may be binary, or unreadable by this app."
         }
+    }
+
+    /// Appends a snippet to the end of the file and saves. Inserting at the caret
+    /// would need the text view's selection to travel through SwiftUI and back,
+    /// and the end of the file is where a new hook block belongs anyway.
+    private func append(_ snippet: Snippet) {
+        if !text.isEmpty, !text.hasSuffix("\n") {
+            text += "\n"
+        }
+        text += "\n" + snippet.body
+        save()
     }
 
     private func save() {

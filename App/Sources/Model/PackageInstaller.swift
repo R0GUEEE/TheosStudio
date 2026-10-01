@@ -115,6 +115,35 @@ final class PackageInstaller: ObservableObject {
         }
     }
 
+    /// Kills one process, so a hook inside an app can be tested without waiting
+    /// for SpringBoard to come back. The name is whatever
+    /// INSTALL_TARGET_PROCESSES says, because that is the name `killall` needs.
+    func restart(_ process: String, store: StudioStore) {
+        guard !phase.isRunning else { return }
+        guard let killall = toolPath(named: "killall", store: store) else {
+            let message = "killall is not installed, so the app cannot restart \(process). Installing procps fixes that."
+            phase = .failed(message)
+            onResult?(false, message)
+            return
+        }
+        log = ["Restarting \(process)"]
+        phase = .working("Restarting \(process)")
+        let command = store.privileges.wrapped(killall, ["-9", process])
+        run(command.executable, command.arguments, store: store) { [weak self] outcome in
+            guard let self else { return }
+            if outcome.succeeded {
+                self.log.append("\(process) restarted.")
+                self.phase = .finished("\(process) restarted.")
+                self.onResult?(true, "\(process) restarted.")
+            } else {
+                let reason = self.lastMeaningfulLine(outcome.output) ?? "killall exited with status \(outcome.status)"
+                self.log.append(reason)
+                self.phase = .failed(reason)
+                self.onResult?(false, reason)
+            }
+        }
+    }
+
     /// `sbreload` is the jailbreak-native way to restart SpringBoard without
     /// dropping into safe mode; `killall` is the fallback every setup has.
     func respring(store: StudioStore) {

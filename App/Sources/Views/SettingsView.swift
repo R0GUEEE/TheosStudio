@@ -5,6 +5,7 @@ import TheosStudioCore
 struct SettingsView: View {
 
     @ObservedObject var store: StudioStore
+    @State private var newHeaderFolder = ""
 
     private enum SchemeChoice: String, CaseIterable, Identifiable {
         case automatic, rootful, rootless, roothide
@@ -123,6 +124,36 @@ struct SettingsView: View {
                     Text("AI assistant")
                 } footer: {
                     Text("The assistant reads the project, edits it, builds it and installs it — with your approval for anything that writes. It needs an OpenAI-compatible endpoint and a key of your own.")
+                }
+
+                Section {
+                    ForEach(store.settings.headerSearchFolders, id: \.self) { folder in
+                        Text(folder)
+                            .font(.system(size: 11, design: .monospaced))
+                            .lineLimit(2)
+                    }
+                    .onDelete { offsets in
+                        store.settings.headerSearchFolders.remove(atOffsets: offsets)
+                    }
+
+                    HStack {
+                        TextField("/var/mobile/headers", text: $newHeaderFolder)
+                            .font(.system(size: 12, design: .monospaced))
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                        Button("Add") {
+                            let folder = newHeaderFolder.trimmingCharacters(in: .whitespaces)
+                            guard !folder.isEmpty, !store.settings.headerSearchFolders.contains(folder) else { return }
+                            store.settings.headerSearchFolders.append(folder)
+                            newHeaderFolder = ""
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(newHeaderFolder.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                } header: {
+                    Text("Header search")
+                } footer: {
+                    Text("Folders to search when looking for a class or method to hook — a dump of private headers, usually. The SDK headers inside Theos are searched separately. This is what turns \"I think the class is called SBIconView\" into a confirmed name.")
                 }
 
                 Section {
