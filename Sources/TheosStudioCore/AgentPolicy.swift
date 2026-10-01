@@ -43,7 +43,15 @@ public enum AgentPolicy {
 
     public static func decide(_ action: AgentAction, privilegesCanEscalate: Bool) -> AgentDecision {
         switch action {
-        case .listFiles, .finish:
+        case .listFiles, .finish, .readCrashes, .gitStatus:
+            return .allowed
+
+        case .gitDiff(let path):
+            guard let path, !path.isEmpty else { return .allowed }
+            guard let relative = relativePath(path) else {
+                return .refused(reason: "git_diff only accepts a path inside the project. '\(path)' is not one.")
+            }
+            _ = relative
             return .allowed
 
         case .readFile(let path):

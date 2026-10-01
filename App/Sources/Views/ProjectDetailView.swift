@@ -11,6 +11,10 @@ struct ProjectDetailView: View {
     @State private var entries: [ProjectEntry] = []
     @State private var installAfterBuild = false
     @State private var isShowingInstalled = false
+    @State private var isCreatingFile = false
+    @State private var renamingEntry: ProjectEntry?
+    @State private var deletingEntry: ProjectEntry?
+    @State private var toolOutcome: ProjectFileEditor.Outcome?
 
     init(store: StudioStore, project: Project) {
         _store = ObservedObject(wrappedValue: store)
@@ -35,6 +39,7 @@ struct ProjectDetailView: View {
             filesSection
             buildSection
             packageSection
+            toolsSection
             problemsSection
         }
         .listStyle(.insetGrouped)
@@ -87,6 +92,36 @@ struct ProjectDetailView: View {
             }
             .navigationViewStyle(.stack)
         }
+        .sheet(isPresented: $isCreatingFile) {
+            NewFileSheet(project: current, existingPaths: files.map(\.relativePath), isPresented: $isCreatingFile) { outcome in
+                apply(outcome)
+            }
+        }
+        .sheet(item: $renamingEntry) { entry in
+            RenameFileSheet(project: current, entry: entry, isPresented: Binding(
+                get: { renamingEntry != nil },
+                set: { if !$0 { renamingEntry = nil } }
+            )) { outcome in
+                apply(outcome)
+            }
+        }
+        .alert(item: $deletingEntry) { entry in
+            Alert(
+                title: Text("Delete \(entry.relativePath)?"),
+                message: Text("The file is removed from disk, and from the Makefile's file list if it was there. There is no undo."),
+                primaryButton: .destructive(Text("Delete")) {
+                    delete(entry)
+                },
+                secondaryButton: .cancel()
+            )
+        }
+        .alert(item: $toolOutcome) { outcome in
+            Alert(
+                title: Text(outcome.warnings.isEmpty ? "Done" : "Done, with a note"),
+                message: Text((outcome.notes + outcome.warnings).joined(separator: "\n\n")),
+                dismissButton: .default(Text("OK"))
+            )
+        }
         .onAppear(perform: reload)
         .onChange(of: runner.phase) { phase in
             guard case .succeeded = phase else { return }
@@ -135,6 +170,9 @@ struct ProjectDetailView: View {
                     )) {
                         FileRow(entry: entry)
                     }
+                    .contextMenu {
+                        fileContextMenu(for: entry)
+                    }
                 } else {
                     HStack {
                         FileRow(entry: entry)
@@ -153,9 +191,60 @@ struct ProjectDetailView: View {
                     .foregroundColor(.secondary)
             }
         } header: {
-            Text("Files")
+            HStack {
+                Text("Files")
+                Spacer()
+                Button {
+                    isCreatingFile = true
+                } label: {
+                    Label("New file", systemImage: "plus")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.borderless)
+            }
         } footer: {
-            Text("Editing is plain text with syntax colouring. A new source file also has to be added to the Makefile's file list before Theos will compile it.")
+            Text("Editing is plain text with syntax colouring. Creating or renaming a source file updates the Makefile's file list, because a source that is not listed there is never compiled.")
+        }
+    }
+
+    /// Long-press a file: rename, delete, or wire it into the build.
+    @ViewBuilder
+    private func fileContextMenu(for entry: ProjectEntry) -> some View {
+        Button {
+            renamingEntry = entry
+        } label: {
+            Label("Rename", systemImage: "pencil")
+        }
+
+        if MakefileEditor.isSourceFile(entry.relativePath), !makefileSources.contains(entry.relativePath) {
+            Button {
+                addToMakefile(entry)
+            } label: {
+                Label("Add to the Makefile", systemImage: "hammer")
+            }
+        }
+
+        Button(role: .destructive) {
+            deletingEntry = entry
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
+    }
+
+    private var makefileSources: [String] {
+        guard let makefile = FS.read(current.path + "/Makefile") else { return [] }
+        return MakefileEditor.sources(in: makefile)
+    }
+
+    private func addToMakefile(_ entry: ProjectEntry) {
+        let path = current.path + "/Makefile"
+        guard let makefile = FS.read(path) else { return }
+        let result = MakefileEditor.addSource(entry.relativePath, to: makefile)
+        if result.changed {
+            try? FS.write(result.text, to: path)
+            store.banner = BannerMessage(title: "Makefile updated", body: "\(entry.relativePath) will now be compiled.")
+        } else if let reason = result.reason {
+            store.banner = BannerMessage(title: "Nothing to change", body: reason)
         }
     }
 
@@ -255,6 +344,10 @@ struct ProjectDetailView: View {
                 }
                 DetailRow(label: "Size", value: ByteCountFormatter.string(fromByteCount: Int64(FS.size(artifact)), countStyle: .file))
 
+                NavigationLink(destination: PackageInspectionView(store: store, project: current, debPath: artifact)) {
+                    Label("What is inside", systemImage: "shippingbox")
+                }
+
                 if installer.phase.isRunning {
                     HStack {
                         ProgressView().scaleEffect(0.8)
@@ -304,6 +397,21 @@ struct ProjectDetailView: View {
     }
 
     @ViewBuilder
+    private var toolsSection: some View {
+        Section {
+            NavigationLink(destination: SourceControlView(store: store, project: current)) {
+                Label("Source control", systemImage: "arrow.triangle.branch")
+            }
+            NavigationLink(destination: CrashLogsView(store: store, project: current)) {
+                Label("Crashes", systemImage: "exclamationmark.triangle")
+            }
+        } header: {
+            Text("Diagnose")
+        } footer: {
+            Text("Crash logs are read from the device, and the newest ones that mention this project come first — which is usually the answer to \"my tweak crashes SpringBoard\".")
+        }
+    }
+
     private var problemsSection: some View {
         if !controlIssues.isEmpty {
             Section {
@@ -366,6 +474,24 @@ struct ProjectDetailView: View {
 
     private func resolved(_ file: String) -> String {
         file.hasPrefix("/") ? file : (current.path as NSString).appendingPathComponent(file)
+    }
+
+    // MARK: - File actions
+
+    private func apply(_ outcome: ProjectFileEditor.Outcome) {
+        reload()
+        if !outcome.notes.isEmpty || !outcome.warnings.isEmpty {
+            toolOutcome = outcome
+        }
+    }
+
+    private func delete(_ entry: ProjectEntry) {
+        do {
+            let outcome = try ProjectFileEditor.delete(project: current.path, path: entry.relativePath)
+            apply(outcome)
+        } catch {
+            store.banner = BannerMessage(title: "Could not delete", body: error.localizedDescription)
+        }
     }
 
     // MARK: - Loading

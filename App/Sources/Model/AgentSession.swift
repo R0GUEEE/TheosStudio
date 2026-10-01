@@ -20,6 +20,12 @@ struct AgentEnvironment {
     // view and touch its state; without the annotation the compiler has to guess.
     var build: @MainActor (Bool, Bool) async -> BuildRunner.Outcome
     var install: @MainActor () async -> (Bool, String)
+    /// The device's crash logs, already reduced to the interesting fields.
+    var crashSummaries: @MainActor (Int) -> [CrashLogSummary]
+    /// Git reads. They are quick but they are still process runs, so they are
+    /// async like everything else that spawns something.
+    var gitStatus: @MainActor () async -> String
+    var gitDiff: @MainActor (String?) async -> String
     var privilegesCanEscalate: Bool
     var toolchainSummary: String?
 
@@ -159,6 +165,32 @@ enum AgentExecutor {
                 let (ok, message) = await environment.install()
                 return ok ? message : "Error: \(message)"
             })
+
+        case .readCrashes(let limit):
+            let summaries = environment.crashSummaries(limit)
+            guard !summaries.isEmpty else {
+                return .immediate("No crash logs were found in the usual places. Either nothing has crashed, or the logs live somewhere this app does not look.")
+            }
+            let lines = summaries.map { summary -> String in
+                var line = summary.process
+                if let date = summary.date {
+                    line += " (" + CrashLogSummary.formatter.string(from: date) + ")"
+                }
+                if let kind = summary.kind { line += " [" + kind + "]" }
+                if let reason = summary.reason { line += ": " + reason }
+                if summary.mentionsOurs { line += " — this project appears in it" }
+                if let frame = summary.ownFrame { line += "\n    " + frame }
+                return line
+            }
+            return .immediate(lines.joined(separator: "\n"))
+
+        // A read is planned rather than approved: the policy decides whether the
+        // user is asked, and for these it does not.
+        case .gitStatus:
+            return .approval(Plan(diff: nil) { await environment.gitStatus() })
+
+        case .gitDiff(let path):
+            return .approval(Plan(diff: nil) { await environment.gitDiff(path) })
 
         case .finish(let summary):
             return .immediate("Turn finished: \(summary)")

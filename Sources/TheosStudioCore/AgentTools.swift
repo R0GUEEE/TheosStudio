@@ -12,6 +12,11 @@ public enum AgentAction: Equatable, Sendable {
     case updateControl(key: String, value: String?)
     case build(clean: Bool, final: Bool)
     case install
+    /// The device's recent crash logs, reduced to what is worth reading.
+    case readCrashes(limit: Int)
+    /// The project's working tree: what changed, and what the changes say.
+    case gitStatus
+    case gitDiff(path: String?)
     case finish(summary: String)
     /// Anything unrecognised, with the reason to hand back to the model. A tool
     /// call the app cannot parse is a prompt for a retry, not a crash.
@@ -26,6 +31,9 @@ public enum AgentAction: Equatable, Sendable {
         case .updateControl: return "update_control"
         case .build: return "build"
         case .install: return "install"
+        case .readCrashes: return "read_crashes"
+        case .gitStatus: return "git_status"
+        case .gitDiff: return "git_diff"
         case .finish: return "finish"
         case .unknown(let name, _): return name
         }
@@ -48,6 +56,12 @@ public enum AgentAction: Equatable, Sendable {
             return "Build\(clean ? " (clean first)" : "")\(final ? " (final package)" : "")"
         case .install:
             return "Install the built package"
+        case .readCrashes(let limit):
+            return "Read the \(limit) most recent crash logs"
+        case .gitStatus:
+            return "Look at what changed in the project"
+        case .gitDiff(let path):
+            return path.map { "Read the diff of \($0)" } ?? "Read the diff of every change"
         case .finish(let summary):
             return "Finish: \(summary)"
         case .unknown(let name, let reason):
@@ -120,6 +134,16 @@ public enum AgentActionParser {
 
         case "install":
             return .install
+
+        case "read_crashes":
+            let limit = arguments["limit"]?.stringValue.flatMap(Int.init) ?? 5
+            return .readCrashes(limit: min(max(limit, 1), 25))
+
+        case "git_status":
+            return .gitStatus
+
+        case "git_diff":
+            return .gitDiff(path: string("path"))
 
         case "finish":
             guard let summary = string("summary") else {
@@ -208,6 +232,27 @@ public enum AgentToolCatalog {
             name: "install",
             description: "Install the package the last build produced with dpkg, then respring. Only call it when the user asked for the tweak to be installed.",
             parameters: .schema(properties: [:], required: [])
+        ),
+        AgentTool(
+            name: "read_crashes",
+            description: "Read the device's recent crash logs, newest first, reduced to the process, the reason and the first frame that mentions this project. Call it when a tweak crashes the process it hooks: the log says whether this project's dylib was on the stack.",
+            parameters: .schema(
+                properties: ["limit": .property("integer", "How many logs to read. Defaults to 5, maximum 25.")],
+                required: []
+            )
+        ),
+        AgentTool(
+            name: "git_status",
+            description: "Show what changed in the project since the last commit: staged, modified and untracked files, plus a diffstat. Useful before committing, and to see changes made outside this conversation.",
+            parameters: .schema(properties: [:], required: [])
+        ),
+        AgentTool(
+            name: "git_diff",
+            description: "Read the actual diff of the working tree. With no path it is every change, which can be long; pass a path for one file.",
+            parameters: .schema(
+                properties: ["path": .property("string", "Optional path relative to the project root.")],
+                required: []
+            )
         ),
         AgentTool(
             name: "finish",

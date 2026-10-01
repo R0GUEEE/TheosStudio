@@ -283,6 +283,15 @@ struct AssistantView: View {
             saveControl: { control in try FS.write(control.serialized(), to: path + "/control") },
             build: { clean, final in await runBuild(project: project, clean: clean, final: final) },
             install: { await runInstall(project: project) },
+            crashSummaries: { limit in
+                CrashService.summaries(
+                    store: store,
+                    names: CrashService.interestingNames(for: project),
+                    limit: limit
+                )
+            },
+            gitStatus: { await gitStatusText(project: project) },
+            gitDiff: { path in await gitDiffText(project: project, path: path) },
             privilegesCanEscalate: store.privileges.canEscalate,
             toolchainSummary: toolchainSummary
         )
@@ -315,6 +324,40 @@ struct AssistantView: View {
             }
             runner.build(project: project, store: store, cleanOnly: false, cleanOverride: clean, finalOverride: final)
         }
+    }
+
+    /// What the assistant is told about the working tree: the branch, what
+    /// changed, and the diffstat. The diff itself is a separate tool, because it
+    /// is long.
+    private func gitStatusText(project: Project) async -> String {
+        guard GitService.isRepository(project: project.path) else {
+            return "This project is not a git repository. It can be initialised from the project's Source control screen."
+        }
+        guard GitService.toolPath(store: store) != nil else {
+            return "git is not installed on this device."
+        }
+        let branch = await GitService.branch(project: project.path, store: store) ?? "unknown"
+        let files = await GitService.status(project: project.path, store: store)
+        var lines = ["Branch: \(branch)", GitPorcelain.summary(files)]
+        for file in files.prefix(40) {
+            lines.append("  \(file.path) — \(file.label)")
+        }
+        let stat = await GitService.diffStat(project: project.path, store: store)
+        if !stat.isEmpty { lines.append(stat) }
+        return lines.joined(separator: "\n")
+    }
+
+    private func gitDiffText(project: Project, path: String?) async -> String {
+        guard GitService.isRepository(project: project.path) else {
+            return "This project is not a git repository."
+        }
+        let diff = await GitService.diff(project: project.path, path: path, store: store)
+        guard !diff.isEmpty else {
+            return path.map { "No unstaged changes in \($0)." } ?? "No unstaged changes."
+        }
+        // Long diffs are truncated rather than dropped: the beginning is where
+        // the file names are.
+        return String(diff.prefix(8000))
     }
 
     private func runInstall(project: Project) async -> (Bool, String) {

@@ -13,7 +13,8 @@ final class AgentActionTests: XCTestCase {
         // checked against each other, not just against the code.
         let expected: Set<String> = [
             "list_files", "read_file", "write_file", "replace_in_file",
-            "update_control", "build", "install", "finish",
+            "update_control", "build", "install", "read_crashes", "git_status",
+            "git_diff", "finish",
         ]
         XCTAssertEqual(AgentToolCatalog.names, expected)
 
@@ -59,6 +60,16 @@ final class AgentActionTests: XCTestCase {
             AgentActionParser.parse(call("update_control", #"{"key":"Depiction"}"#)),
             .updateControl(key: "Depiction", value: nil)
         )
+    }
+
+    func testCrashAndGitTools() {
+        XCTAssertEqual(AgentActionParser.parse(call("read_crashes", "{}")), .readCrashes(limit: 5))
+        XCTAssertEqual(AgentActionParser.parse(call("read_crashes", #"{"limit":10}"#)), .readCrashes(limit: 10))
+        // Clamped: a model asking for a thousand logs should not be obeyed.
+        XCTAssertEqual(AgentActionParser.parse(call("read_crashes", #"{"limit":1000}"#)), .readCrashes(limit: 25))
+        XCTAssertEqual(AgentActionParser.parse(call("git_status", "{}")), .gitStatus)
+        XCTAssertEqual(AgentActionParser.parse(call("git_diff", "{}")), .gitDiff(path: nil))
+        XCTAssertEqual(AgentActionParser.parse(call("git_diff", #"{"path":"Tweak.x"}"#)), .gitDiff(path: "Tweak.x"))
     }
 
     func testBuildDefaultsToAFinalPackage() {
@@ -181,6 +192,16 @@ final class AgentPolicyTests: XCTestCase {
             return XCTFail("expected approval")
         }
         XCTAssertTrue(note.contains("cannot become root"))
+    }
+
+    func testReadingCrashesAndGitNeedsNoApprovalButStaysInTheProject() {
+        XCTAssertEqual(decide(.readCrashes(limit: 5)), .allowed)
+        XCTAssertEqual(decide(.gitStatus), .allowed)
+        XCTAssertEqual(decide(.gitDiff(path: "Tweak.x")), .allowed)
+        XCTAssertEqual(decide(.gitDiff(path: nil)), .allowed)
+        guard case .refused = decide(.gitDiff(path: "/etc/passwd")) else {
+            return XCTFail("expected a refusal for a path outside the project")
+        }
     }
 
     func testUnknownActionsAreRefusedWithTheParsersReason() {
