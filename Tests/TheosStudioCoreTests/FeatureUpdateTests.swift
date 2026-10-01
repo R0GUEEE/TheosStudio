@@ -7,7 +7,7 @@ final class FeatureUpdateTests: XCTestCase {
             ProjectFile(path: "Tweak.x", contents: "SpringBoard spring springboard\n"),
             ProjectFile(path: "README.md", contents: "spring\n"),
         ]
-        let results = ProjectSearch.search(
+        let results = AdvancedProjectSearch.search(
             query: "spring",
             files: files,
             options: .init(caseSensitive: false, useRegex: false, wholeWord: true, fileExtensions: ["x"])
