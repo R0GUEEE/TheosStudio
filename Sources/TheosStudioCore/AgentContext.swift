@@ -23,6 +23,9 @@ public struct AgentProjectSnapshot: Equatable, Sendable {
     public var buildSummary: String?
     /// What this device can do: Theos location, SDKs, privileges.
     public var toolchainSummary: String?
+    /// App-wide workspace state: projects, plugins, installed packages and other
+    /// context that is useful beyond one source tree.
+    public var appSummary: String?
     /// The project's own AGENT.md, when it has one: standing instructions the user
     /// wrote for this project, in the project.
     public var briefing: String?
@@ -37,6 +40,7 @@ public struct AgentProjectSnapshot: Equatable, Sendable {
         files: [ProjectFile] = [],
         buildSummary: String? = nil,
         toolchainSummary: String? = nil,
+        appSummary: String? = nil,
         briefing: String? = nil
     ) {
         self.name = name
@@ -48,6 +52,7 @@ public struct AgentProjectSnapshot: Equatable, Sendable {
         self.files = files
         self.buildSummary = buildSummary
         self.toolchainSummary = toolchainSummary
+        self.appSummary = appSummary
         self.briefing = briefing
     }
 }
@@ -145,6 +150,12 @@ public enum AgentContext {
         if let toolchain = snapshot.toolchainSummary {
             lines.append("## This device")
             lines.append(toolchain)
+            lines.append("")
+        }
+
+        if let app = snapshot.appSummary {
+            lines.append("## TheosStudio workspace")
+            lines.append(app)
             lines.append("")
         }
 
