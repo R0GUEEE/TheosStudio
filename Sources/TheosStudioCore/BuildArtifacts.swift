@@ -119,6 +119,39 @@ public enum ProjectSearch {
         return results
     }
 
+    /// Replaces every occurrence in one file, returning the new text and how many
+    /// were replaced. Used by the editor's find-and-replace, which is why it
+    /// reports a count: "replaced 0" is the answer someone needs when their text
+    /// did not match.
+    public static func replacingOccurrences(
+        in text: String,
+        query: String,
+        with replacement: String,
+        caseSensitive: Bool = false
+    ) -> (text: String, count: Int) {
+        let needle = query.trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return (text, 0) }
+        let count = matches(
+            in: [ProjectFile(path: "", contents: text)],
+            query: needle,
+            caseSensitive: caseSensitive,
+            limit: Int.max
+        ).count
+        guard count > 0 else { return (text, 0) }
+
+        let updated: String
+        if caseSensitive {
+            updated = text.replacingOccurrences(of: needle, with: replacement)
+        } else {
+            updated = text.replacingOccurrences(
+                of: needle,
+                with: replacement,
+                options: [.caseInsensitive]
+            )
+        }
+        return (updated, count)
+    }
+
     /// The order a result list wants: the file most likely to matter first, then
     /// by line.
     public static func grouped(_ matches: [ProjectMatch]) -> [(path: String, matches: [ProjectMatch])] {
