@@ -42,6 +42,12 @@ final class PluginManager: ObservableObject {
         enabledPlugins.filter { $0.manifest.scopes.contains(.project) }
     }
 
+    var contributedSnippets: [Snippet] {
+        enabledPlugins.flatMap { plugin in
+            plugin.manifest.snippets.map { $0.snippet(pluginID: plugin.id) }
+        }
+    }
+
     func reload() {
         try? FS.createDirectory(Paths.defaultPluginsDirectory)
         let disabled = Set(UserDefaults.standard.stringArray(forKey: Self.disabledKey) ?? [])
@@ -218,6 +224,62 @@ enum BuiltInPlugins {
                 ),
             ]
         ),
+        StudioPluginManifest(
+            id: "builtin.debug-snippets",
+            name: "Debug Snippets",
+            version: "1.0.0",
+            author: "TheosStudio",
+            summary: "Reusable runtime guards and logging helpers for tweak debugging.",
+            systemImage: "ladybug",
+            scopes: [.project],
+            snippets: [
+                PluginSnippet(
+                    id: "runtime-class-guard",
+                    title: "Runtime class and selector guard",
+                    summary: "Confirm a private class and selector exist before calling them.",
+                    language: .code,
+                    suggestedFileName: "RuntimeChecks.x",
+                    body: """
+                    Class cls = NSClassFromString(@"SBIconView");
+                    SEL selector = NSSelectorFromString(@"setHighlighted:");
+                    if (cls && [cls instancesRespondToSelector:selector]) {
+                        NSLog(@"[MyTweak] SBIconView has setHighlighted:");
+                    } else {
+                        NSLog(@"[MyTweak] expected private API is unavailable on this OS");
+                    }
+                    """
+                ),
+                PluginSnippet(
+                    id: "darwin-notify",
+                    title: "Darwin notification observer",
+                    summary: "Listen for a cross-process notification without polling.",
+                    language: .code,
+                    suggestedFileName: "Notifications.x",
+                    body: """
+                    static void mytweak_notification(
+                        CFNotificationCenterRef center,
+                        void *observer,
+                        CFNotificationName name,
+                        const void *object,
+                        CFDictionaryRef userInfo
+                    ) {
+                        NSLog(@"[MyTweak] notification received");
+                    }
+
+                    %ctor {
+                        CFNotificationCenterAddObserver(
+                            CFNotificationCenterGetDarwinNotifyCenter(),
+                            NULL,
+                            mytweak_notification,
+                            CFSTR("com.example.mytweak/Reload"),
+                            NULL,
+                            CFNotificationSuspensionBehaviorDeliverImmediately
+                        );
+                    }
+                    """
+                ),
+            ]
+        ),
     ]
 }
 
@@ -331,6 +393,16 @@ struct PluginCenterView: View {
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                         .lineLimit(2)
+                                    let actionCount = plugin.manifest.actions.count
+                                    let snippetCount = plugin.manifest.snippets.count
+                                    if actionCount > 0 || snippetCount > 0 {
+                                        Text([
+                                            actionCount > 0 ? "\(actionCount) action\(actionCount == 1 ? "" : "s")" : nil,
+                                            snippetCount > 0 ? "\(snippetCount) snippet\(snippetCount == 1 ? "" : "s")" : nil,
+                                        ].compactMap { $0 }.joined(separator: " · "))
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
                                 Spacer()
                                 if !plugin.isEnabled {
@@ -451,27 +523,52 @@ struct PluginDetailView: View {
                 Text(plugin.manifest.summary)
             }
 
-            Section {
-                ForEach(plugin.manifest.actions) { action in
-                    Button {
-                        onRun(action)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Label(action.title, systemImage: action.systemImage)
-                            if !action.detail.isEmpty {
-                                Text(action.detail).font(.caption).foregroundColor(.secondary)
+            if !plugin.manifest.actions.isEmpty {
+                Section {
+                    ForEach(plugin.manifest.actions) { action in
+                        Button {
+                            onRun(action)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Label(action.title, systemImage: action.systemImage)
+                                if !action.detail.isEmpty {
+                                    Text(action.detail).font(.caption).foregroundColor(.secondary)
+                                }
                             }
                         }
+                        .disabled(!livePlugin.isEnabled || unavailable(action))
                     }
-                    .disabled(!livePlugin.isEnabled || unavailable(action))
+                } header: {
+                    Text("Actions")
+                } footer: {
+                    if !livePlugin.isEnabled {
+                        Text("Enable this plugin to run its actions.")
+                    } else if project == nil && plugin.manifest.scopes.contains(.project) {
+                        Text("Choose a project context in the Plugin Center.")
+                    }
                 }
-            } header: {
-                Text("Actions")
-            } footer: {
-                if !livePlugin.isEnabled {
-                    Text("Enable this plugin to run its actions.")
-                } else if project == nil && plugin.manifest.scopes.contains(.project) {
-                    Text("Choose a project context in the Plugin Center.")
+    
+            }
+
+            if !plugin.manifest.snippets.isEmpty {
+                Section {
+                    ForEach(plugin.manifest.snippets) { snippet in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(snippet.title)
+                            Text(snippet.summary)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text(snippet.suggestedFileName)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Editor snippets")
+                } footer: {
+                    Text(livePlugin.isEnabled
+                         ? "These are available from the Snippets menu in the code editor."
+                         : "Enable this plugin to add its snippets to the editor.")
                 }
             }
         }
