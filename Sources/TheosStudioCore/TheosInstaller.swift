@@ -225,7 +225,7 @@ public enum TheosInstaller {
     private static func theosSteps(
         destination: String,
         toolPaths: [String: String],
-        require: (String, String) -> Bool,
+        require: (_ tool: String, because reason: String) -> Bool,
         warnings: inout [String],
         exists: (String) -> Bool,
         listDirectory: (String) -> [String]
@@ -290,7 +290,7 @@ public enum TheosInstaller {
         destination: String,
         asset: SDKAsset?,
         toolPaths: [String: String],
-        require: (String, String) -> Bool,
+        require: (_ tool: String, because reason: String) -> Bool,
         warnings: inout [String]
     ) -> [InstallStep] {
         guard let asset else {
