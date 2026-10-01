@@ -75,10 +75,13 @@ jobs:
             runner=$!
             ( sleep 120; kill -9 "$runner" 2>/dev/null ) &
             watchdog=$!
-            wait "$runner"
-            status=$?
-            kill "$watchdog" 2>/dev/null
-            wait "$watchdog" 2>/dev/null
+            # `wait` on a killed watchdog returns 143, and the runner's shell has
+            # -e set: without these guards the step aborts the moment the first
+            # suite passes, which looks exactly like a failure of that suite.
+            status=0
+            wait "$runner" || status=$?
+            kill "$watchdog" 2>/dev/null || true
+            wait "$watchdog" 2>/dev/null || true
             if [ "$status" -ne 0 ]; then
               echo "::error::$suite did not finish cleanly (exit $status)"
               exit 1
