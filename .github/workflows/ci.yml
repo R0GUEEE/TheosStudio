@@ -61,11 +61,29 @@ jobs:
 
       - name: Test the suites this change touches, serially
         run: |
-          set -euo pipefail
+          set -u
           # Serial on purpose: a test process that dies takes its whole worker
           # with it under --parallel, and the name of the test that crashed is
           # then a guess.
-          swift test --filter 'MakefileEditorTests|CrashLogParserTests|GitPorcelainTests|DebListingTests|TheosInstallerTests|AgentProviderTests|AgentModelListTests|PrivilegesTests'
+          #
+          # Each suite gets its own watchdog. A test that never returns otherwise
+          # consumes the job's whole timeout and says nothing about which one it
+          # was, which is exactly what happened twice.
+          for suite in MakefileEditorTests CrashLogParserTests GitPorcelainTests DebListingTests TheosInstallerTests AgentProviderTests AgentModelListTests PrivilegesTests; do
+            printf '\n===== %s =====\n' "$suite"
+            swift test --filter "$suite" &
+            runner=$!
+            ( sleep 120; kill -9 "$runner" 2>/dev/null ) &
+            watchdog=$!
+            wait "$runner"
+            status=$?
+            kill "$watchdog" 2>/dev/null
+            wait "$watchdog" 2>/dev/null
+            if [ "$status" -ne 0 ]; then
+              echo "::error::$suite did not finish cleanly (exit $status)"
+              exit 1
+            fi
+          done
 
       - name: Test
         run: swift test
