@@ -26,13 +26,15 @@ public enum AgentPolicy {
     /// unknown is treated as a write — the cautious answer.
     public static func access(for action: AgentAction) -> AgentAccess {
         switch action {
-        case .listFiles, .readFile, .readCrashes, .gitStatus, .gitDiff, .searchHeaders, .finish:
+        case .listFiles, .readFile, .readCrashes, .gitStatus, .gitDiff, .searchHeaders,
+             .workspaceStatus, .projectHealth, .projectStats, .listLaunchTargets,
+             .inspectPackage, .installedPackages, .listPlugins, .finish:
             return .read
-        case .writeFile, .replaceInFile, .updateControl:
+        case .writeFile, .replaceInFile, .updateControl, .runPlugin:
             return .write
         case .build:
             return .build
-        case .install:
+        case .install, .restartTarget:
             return .install
         case .unknown:
             return .write
@@ -103,7 +105,9 @@ public enum AgentPolicy {
     /// The rules that hold whatever the settings say.
     static func decideSandbox(_ action: AgentAction, privilegesCanEscalate: Bool) -> AgentDecision {
         switch action {
-        case .listFiles, .finish, .readCrashes, .gitStatus, .searchHeaders:
+        case .listFiles, .finish, .readCrashes, .gitStatus, .searchHeaders,
+             .workspaceStatus, .projectHealth, .projectStats, .listLaunchTargets,
+             .inspectPackage, .installedPackages, .listPlugins:
             return .allowed
 
         case .gitDiff(let path):
@@ -155,6 +159,12 @@ public enum AgentPolicy {
                 ? "Install the built package and respring"
                 : "Install the built package — this app cannot become root, so this will fail unless the package is installed from a package manager"
             return .needsApproval(reason: note)
+
+        case .runPlugin(let pluginID, let actionID):
+            return .needsApproval(reason: "Run plugin action \(pluginID) / \(actionID)")
+
+        case .restartTarget(let name):
+            return .needsApproval(reason: "Restart \(name)")
 
         case .unknown(_, let reason):
             return .refused(reason: reason)
