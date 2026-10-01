@@ -32,7 +32,7 @@ struct AgentEnvironment {
     var projectHealth: @MainActor () -> String
     var projectStats: @MainActor () -> String
     var launchTargets: @MainActor () -> String
-    var inspectPackage: @MainActor () -> String
+    var inspectPackage: @MainActor () async -> String
     var installedPackages: @MainActor (String?) -> String
     var plugins: @MainActor () -> String
     var runPlugin: @MainActor (String, String) async -> String
@@ -233,7 +233,7 @@ enum AgentExecutor {
             return .immediate(environment.launchTargets())
 
         case .inspectPackage:
-            return .immediate(environment.inspectPackage())
+            return .approval(Plan(diff: nil) { await environment.inspectPackage() })
 
         case .installedPackages(let query):
             return .immediate(environment.installedPackages(query))
