@@ -136,7 +136,7 @@ public enum AgentActionParser {
             return .install
 
         case "read_crashes":
-            let limit = arguments["limit"]?.stringValue.flatMap(Int.init) ?? 5
+            let limit = arguments["limit"]?.intValue ?? 5
             return .readCrashes(limit: min(max(limit, 1), 25))
 
         case "git_status":

@@ -20,6 +20,18 @@ public indirect enum JSONValue: Equatable, Sendable {
         return nil
     }
 
+    /// Numbers and strings that hold one. A model that sends `{"limit": 10}`
+    /// means ten, and reading only `.stringValue` quietly returned the default
+    /// instead — the kind of bug that looks like the model being ignored.
+    public var intValue: Int? {
+        switch self {
+        case .number(let value): return Int(value)
+        case .string(let text): return Int(text)
+        case .bool(let value): return value ? 1 : 0
+        default: return nil
+        }
+    }
+
     public subscript(key: String) -> JSONValue? {
         if case .object(let dictionary) = self { return dictionary[key] }
         return nil
