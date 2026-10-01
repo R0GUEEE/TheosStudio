@@ -494,7 +494,8 @@ struct AssistantView: View {
         let rawContents = contents.components(separatedBy: "\n").dropFirst().joined(separator: "\n")
         let entries = DebListing.parse(rawContents)
         var lines = ["Package: \((artifact as NSString).lastPathComponent)"]
-        lines.append(contentsOf: DebListing.summary(entries: entries, control: ControlFile.parse(FS.read(project.path + "/control") ?? ""), scheme: project.scheme).map { "\($0.label): \($0.value)" })
+        let scheme = project.scheme ?? store.settings.effectiveScheme
+        lines.append(contentsOf: DebListing.summary(entries: entries, control: ControlFile.parse(FS.read(project.path + "/control") ?? ""), scheme: scheme).map { "\($0.label): \($0.value)" })
         let paths = DebListing.files(entries).prefix(40).map(\.installedPath)
         if !paths.isEmpty { lines.append("Files:\n" + paths.joined(separator: "\n")) }
         if !info.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
