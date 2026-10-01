@@ -34,6 +34,21 @@ This repository contains:
   about the two mistakes that produce a package which installs and does nothing:
   a tweak with no hooking library in `Depends`, and a `Name:` that disagrees with
   the project name the filter plist is named after.
+- **Files** — create, rename and delete, and the file list in the Makefile follows
+  them. A source file that is not in `X_FILES` is never compiled: the build
+  succeeds and the hook does nothing, which is the single most confusing thing
+  that happens to a new tweak developer. A new `.x` starts from a Logos skeleton,
+  and a file that is missing from the list has a one-tap fix in its menu.
+- **Crashes** — reads the device's crash logs (the modern `.ips` and the legacy
+  `.crash`), putting the ones that mention this project's dylib first. The report
+  is the only thing that says whether the tweak is actually at fault.
+- **Source control** — the working tree with per-file diffs and a commit button;
+  initialising a project writes a `.gitignore` that keeps `.theos/` and
+  `packages/` out of the history, and an identity comes from Settings rather than
+  from a "please tell me who you are" error.
+- **Packages** — what is inside the built `.deb` before installing it, including
+  whether it installs where this device looks. A rootful package on a rootless
+  device puts a tweak into directories nothing reads, and nothing says so.
 - **Build** — runs `make package` in the project with the environment Theos needs
   (`THEOS`, a `PATH` that finds the jailbreak's binaries) and streams the output
   into a console. Errors and warnings are lifted out of the log, with file and
@@ -83,6 +98,7 @@ An agent with a small, deliberate set of tools, scoped to one project:
 | Tool | Approval |
 | --- | --- |
 | `list_files`, `read_file` | none — reading is free |
+| `read_crashes`, `git_status`, `git_diff` | none — reading the device's crash logs and the project's working tree |
 | `write_file`, `replace_in_file`, `update_control` | **you see a diff and approve it** |
 | `build` (`make package`) | approve; the compiler's errors and warnings come back as the tool result |
 | `install` (`dpkg` + respring) | approve |
@@ -90,7 +106,9 @@ An agent with a small, deliberate set of tools, scoped to one project:
 Three things make it more than a chat box with a file editor:
 
 - **It reads the build's answer.** `build` returns the diagnostics, so a failing
-  compile is a loop the agent can close by itself: fix, build, read, fix.
+  compile is a loop the agent can close by itself: fix, build, read, fix. With
+  `read_crashes` it can also see whether the crash it is being asked about is even
+  this project's, which is the difference between a guess and a diagnosis.
 - **Nothing is written behind your back.** Every mutating call stops and shows the
   change as a unified diff first. Denying one hands the refusal back to the model
   as the tool result, so it asks instead of repeating itself.

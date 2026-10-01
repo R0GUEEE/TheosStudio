@@ -31,9 +31,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14]
+        os: [macos-14, ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
+
+      # The engine imports nothing Apple-only, so Linux runs the same tests in a
+      # fraction of the time — and macOS runners are shared, which makes them
+      # occasionally take twenty minutes to start or, worse, to finish one step.
+      - name: Install Swift (Linux)
+        if: runner.os == 'Linux'
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "5.10"
 
       - name: Show toolchain
         run: swift --version
