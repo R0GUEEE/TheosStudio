@@ -35,7 +35,7 @@ final class PluginTests: XCTestCase {
               "title": "Guard",
               "language": "code",
               "suggestedFileName": "Guard.x",
-              "body": "NSLog(@\"hello\");"
+              "body": "NSLog(@\\\"hello\\\");"
             }
           ]
         }
