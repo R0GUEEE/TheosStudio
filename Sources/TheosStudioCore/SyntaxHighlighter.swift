@@ -1,7 +1,7 @@
 import Foundation
 
 /// Which token rules to apply to a file.
-public enum SyntaxLanguage: String, CaseIterable, Sendable {
+public enum SyntaxLanguage: String, Codable, CaseIterable, Sendable {
     /// Objective-C, Objective-C++ and Logos (the `%hook` directives), plus Swift.
     case code
     case makefile
