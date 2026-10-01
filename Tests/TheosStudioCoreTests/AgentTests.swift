@@ -14,7 +14,7 @@ final class AgentActionTests: XCTestCase {
         let expected: Set<String> = [
             "list_files", "read_file", "write_file", "replace_in_file",
             "update_control", "build", "install", "read_crashes", "git_status",
-            "git_diff", "finish",
+            "git_diff", "search_headers", "finish",
         ]
         XCTAssertEqual(AgentToolCatalog.names, expected)
 
@@ -70,6 +70,16 @@ final class AgentActionTests: XCTestCase {
         XCTAssertEqual(AgentActionParser.parse(call("git_status", "{}")), .gitStatus)
         XCTAssertEqual(AgentActionParser.parse(call("git_diff", "{}")), .gitDiff(path: nil))
         XCTAssertEqual(AgentActionParser.parse(call("git_diff", #"{"path":"Tweak.x"}"#)), .gitDiff(path: "Tweak.x"))
+
+        XCTAssertEqual(
+            AgentActionParser.parse(call("search_headers", #"{"query":"SBIconView"}"#)),
+            .searchHeaders(query: "SBIconView")
+        )
+        let missingQuery = AgentActionParser.parse(call("search_headers", "{}"))
+        guard case .unknown(_, let reason) = missingQuery else {
+            return XCTFail("expected unknown, got \(missingQuery)")
+        }
+        XCTAssertTrue(reason.contains("query"))
     }
 
     func testBuildDefaultsToAFinalPackage() {
@@ -196,6 +206,7 @@ final class AgentPolicyTests: XCTestCase {
 
     func testReadingCrashesAndGitNeedsNoApprovalButStaysInTheProject() {
         XCTAssertEqual(decide(.readCrashes(limit: 5)), .allowed)
+        XCTAssertEqual(decide(.searchHeaders(query: "SBIconView")), .allowed)
         XCTAssertEqual(decide(.gitStatus), .allowed)
         XCTAssertEqual(decide(.gitDiff(path: "Tweak.x")), .allowed)
         XCTAssertEqual(decide(.gitDiff(path: nil)), .allowed)

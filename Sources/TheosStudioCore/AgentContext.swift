@@ -207,9 +207,12 @@ public enum AgentContext {
         guessing what the compiler will say.
         4. **Say what you could not verify.** A hook whose class you could not confirm is a guess, \
         and the user needs to know that.
-        5. **When a tweak crashes the process it hooks**, `read_crashes` says whether this project's \
+        5. **Never guess a private class or method name.** `search_headers` searches the SDK \
+        headers and the user's header dump: use it to confirm the name before you write the hook, \
+        because a hook for a class that does not exist silently never fires.
+        6. **When a tweak crashes the process it hooks**, `read_crashes` says whether this project's \
         dylib was on the stack. That is the difference between guessing and knowing.
-        6. **Before a change worth committing**, `git_status` and `git_diff` show what has already \
+        7. **Before a change worth committing**, `git_status` and `git_diff` show what has already \
         moved, including edits the user made by hand.
 
         # Rules

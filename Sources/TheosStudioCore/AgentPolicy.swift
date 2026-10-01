@@ -43,7 +43,7 @@ public enum AgentPolicy {
 
     public static func decide(_ action: AgentAction, privilegesCanEscalate: Bool) -> AgentDecision {
         switch action {
-        case .listFiles, .finish, .readCrashes, .gitStatus:
+        case .listFiles, .finish, .readCrashes, .gitStatus, .searchHeaders:
             return .allowed
 
         case .gitDiff(let path):

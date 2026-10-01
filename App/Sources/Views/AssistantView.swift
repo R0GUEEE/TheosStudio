@@ -13,6 +13,7 @@ struct AssistantView: View {
     @StateObject private var session = AgentSession()
     @StateObject private var runner = BuildRunner()
     @StateObject private var installer = PackageInstaller()
+    @StateObject private var headers = HeaderIndexer()
     @State private var draft = ""
     @State private var isShowingSettings = false
 
@@ -292,9 +293,19 @@ struct AssistantView: View {
             },
             gitStatus: { await gitStatusText(project: project) },
             gitDiff: { path in await gitDiffText(project: project, path: path) },
+            searchHeaders: { query in
+                await headers.searchOrIndex(query, roots: headerRoots)
+            },
             privilegesCanEscalate: store.privileges.canEscalate,
             toolchainSummary: toolchainSummary
         )
+    }
+
+    /// The same sources the Find a hook screen uses: every SDK Theos has, plus
+    /// whatever header folders the user pointed at.
+    private var headerRoots: [String] {
+        HeaderIndexer.sdkRoots(theosRoot: store.toolchain?.theosRoot)
+            + store.settings.headerSearchFolders.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
     }
 
     private var toolchainSummary: String {

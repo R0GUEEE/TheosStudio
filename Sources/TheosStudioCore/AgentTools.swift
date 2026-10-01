@@ -17,6 +17,9 @@ public enum AgentAction: Equatable, Sendable {
     /// The project's working tree: what changed, and what the changes say.
     case gitStatus
     case gitDiff(path: String?)
+    /// Class and method declarations from the SDK headers and the user's own
+    /// header dump.
+    case searchHeaders(query: String)
     case finish(summary: String)
     /// Anything unrecognised, with the reason to hand back to the model. A tool
     /// call the app cannot parse is a prompt for a retry, not a crash.
@@ -34,6 +37,7 @@ public enum AgentAction: Equatable, Sendable {
         case .readCrashes: return "read_crashes"
         case .gitStatus: return "git_status"
         case .gitDiff: return "git_diff"
+        case .searchHeaders: return "search_headers"
         case .finish: return "finish"
         case .unknown(let name, _): return name
         }
@@ -60,6 +64,8 @@ public enum AgentAction: Equatable, Sendable {
             return "Read the \(limit) most recent crash logs"
         case .gitStatus:
             return "Look at what changed in the project"
+        case .searchHeaders(let query):
+            return "Search the headers for “\(query)”"
         case .gitDiff(let path):
             return path.map { "Read the diff of \($0)" } ?? "Read the diff of every change"
         case .finish(let summary):
@@ -144,6 +150,12 @@ public enum AgentActionParser {
 
         case "git_diff":
             return .gitDiff(path: string("path"))
+
+        case "search_headers":
+            guard let query = string("query"), !query.isEmpty else {
+                return .unknown(name: call.name, reason: "search_headers needs a 'query' — a class or method name.")
+            }
+            return .searchHeaders(query: query)
 
         case "finish":
             guard let summary = string("summary") else {
@@ -232,6 +244,14 @@ public enum AgentToolCatalog {
             name: "install",
             description: "Install the package the last build produced with dpkg, then respring. Only call it when the user asked for the tweak to be installed.",
             parameters: .schema(properties: [:], required: [])
+        ),
+        AgentTool(
+            name: "search_headers",
+            description: "Search Objective-C declarations — classes, protocols, properties, methods and C functions — in the Theos SDK headers and in the user's own header folder. Use it to confirm that a class or selector exists before writing a hook for it, instead of guessing a private API name.",
+            parameters: .schema(
+                properties: ["query": .property("string", "A class or method name, or part of one.")],
+                required: ["query"]
+            )
         ),
         AgentTool(
             name: "read_crashes",

@@ -39,6 +39,19 @@ This repository contains:
   succeeds and the hook does nothing, which is the single most confusing thing
   that happens to a new tweak developer. A new `.x` starts from a Logos skeleton,
   and a file that is missing from the list has a one-tap fix in its menu.
+- **Find a hook** — searches the SDK headers and any folder of dumped private
+  headers you point it at, classes first, and hands you the `%hook` skeleton with
+  a button that creates the file and wires it into the Makefile. A hook for a
+  class that does not exist silently never fires, so confirming the name is the
+  first step of every tweak — and it is the one thing that cannot be done by
+  guessing.
+- **Snippets** — the Logos and Theos patterns that are easy to get subtly wrong,
+  appended into the file you are editing: `%group` with `@available`, the
+  preference read that listens for the settings bundle's notification, `%hookf`,
+  `%property`, the lines that wire a preference bundle into the build.
+- **Restart** — after an install, restart just the process you are testing:
+  `INSTALL_TARGET_PROCESSES` from the Makefile plus the injection filter give the
+  list, so a hook inside an app does not need a respring.
 - **Crashes** — reads the device's crash logs (the modern `.ips` and the legacy
   `.crash`), putting the ones that mention this project's dylib first. The report
   is the only thing that says whether the tweak is actually at fault.
@@ -98,7 +111,8 @@ An agent with a small, deliberate set of tools, scoped to one project:
 | Tool | Approval |
 | --- | --- |
 | `list_files`, `read_file` | none — reading is free |
-| `read_crashes`, `git_status`, `git_diff` | none — reading the device's crash logs and the project's working tree |
+| `read_crashes`, `git_status`, `git_diff` | none — reading the device's crash logs, the project's working tree, and the headers |
+| `search_headers` | none — confirming a class or method name in the SDK headers and your own header dump |
 | `write_file`, `replace_in_file`, `update_control` | **you see a diff and approve it** |
 | `build` (`make package`) | approve; the compiler's errors and warnings come back as the tool result |
 | `install` (`dpkg` + respring) | approve |
@@ -150,10 +164,10 @@ so a green result means the next thing you type will work.
 sources, plists, README), the last build's diagnostics, and the conversation.
 Nothing else on the device is read or sent.
 
-**What it cannot do:** confirm a private class or selector exists on your iOS
-version — it has no way to inspect the device's binaries, and it is told to say
-so rather than guess. Verifying a hook is still `FLEX`/`frida-trace` and a
-respring.
+**What it cannot do:** see the device's *binaries* — a class that is not in the
+SDK headers or in a dump you have given it cannot be confirmed, and it is told to
+say so rather than guess. Point Settings → Header search at a dump of private
+headers and that gap closes for whatever the dump covers.
 
 ## Permissions
 

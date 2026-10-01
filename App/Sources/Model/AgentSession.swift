@@ -26,6 +26,8 @@ struct AgentEnvironment {
     /// async like everything else that spawns something.
     var gitStatus: @MainActor () async -> String
     var gitDiff: @MainActor (String?) async -> String
+    /// Header search, which indexes on first use and is bounded.
+    var searchHeaders: @MainActor (String) async -> [HeaderDeclaration]
     var privilegesCanEscalate: Bool
     var toolchainSummary: String?
 
@@ -183,6 +185,18 @@ enum AgentExecutor {
                 return line
             }
             return .immediate(lines.joined(separator: "\n"))
+
+        case .searchHeaders(let query):
+            return .approval(Plan(diff: nil) {
+                let matches = await environment.searchHeaders(query)
+                guard !matches.isEmpty else {
+                    return "Nothing in the headers matches “\(query)”. The name may be wrong, or the headers for that framework may not be indexed — the user can add a folder of dumped headers in Settings."
+                }
+                return matches.prefix(40).map { declaration -> String in
+                    let owner = declaration.owner.map { " \($0)" } ?? ""
+                    return "\(declaration.kind.label)\(owner): \(declaration.name)\n    \(declaration.signature)\n    \(declaration.location)"
+                }.joined(separator: "\n")
+            })
 
         // A read is planned rather than approved: the policy decides whether the
         // user is asked, and for these it does not.
