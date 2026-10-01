@@ -55,6 +55,11 @@ struct ProjectDetailView: View {
                     }
                     Divider()
                     Button {
+                        store.assistantProjectPath = current.path
+                    } label: {
+                        Label("Work on this with the assistant", systemImage: "sparkles")
+                    }
+                    Button {
                         isShowingInstalled = true
                     } label: {
                         Label("Installed packages", systemImage: "shippingbox")

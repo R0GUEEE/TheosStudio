@@ -61,6 +61,13 @@ final class StudioStore: ObservableObject {
     @Published var settings: StudioSettings {
         didSet { persist() }
     }
+    /// Where the assistant talks to. Kept apart from `settings` because it holds
+    /// no secret: the API key is in the keychain.
+    @Published var agent: AgentSettings {
+        didSet { persistAgent() }
+    }
+    /// The project the assistant tab is working on.
+    @Published var assistantProjectPath: String?
     @Published var banner: BannerMessage?
     /// How privileged commands can be run. Probed once at launch: whether sudo
     /// works without a password is the difference between an app that installs
@@ -71,6 +78,7 @@ final class StudioStore: ObservableObject {
     let jailbreak: JailbreakLayout
 
     private static let settingsKey = "com.r0gueee.theosstudio.settings"
+    private static let agentKey = "com.r0gueee.theosstudio.agent"
 
     init() {
         // The settings are read before `jailbreak` is initialised, so the
@@ -83,6 +91,12 @@ final class StudioStore: ObservableObject {
             stored = StudioSettings()
         }
         settings = stored
+        if let data = UserDefaults.standard.data(forKey: Self.agentKey),
+           let decoded = try? JSONDecoder().decode(AgentSettings.self, from: data) {
+            agent = decoded
+        } else {
+            agent = AgentSettings()
+        }
         jailbreak = JailbreakLayout.detect(exists: { path in
             var isDirectory: ObjCBool = false
             let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
@@ -95,6 +109,11 @@ final class StudioStore: ObservableObject {
     private func persist() {
         guard let data = try? JSONEncoder().encode(settings) else { return }
         UserDefaults.standard.set(data, forKey: Self.settingsKey)
+    }
+
+    private func persistAgent() {
+        guard let data = try? JSONEncoder().encode(agent) else { return }
+        UserDefaults.standard.set(data, forKey: Self.agentKey)
     }
 
     // MARK: - Toolchain

@@ -39,6 +39,9 @@ final class PackageInstaller: ObservableObject {
     static var isRunningAsRoot: Bool { geteuid() == 0 }
 
     private var process: ShellProcess?
+    /// Called once when an install/remove/respring finishes, for callers that
+    /// need the result as a value rather than as a published phase.
+    var onResult: ((Bool, String) -> Void)?
 
     // MARK: - Installing
 
@@ -46,13 +49,17 @@ final class PackageInstaller: ObservableObject {
     func install(debPath: String, store: StudioStore) {
         guard !phase.isRunning else { return }
         guard FS.fileExists(debPath) else {
-            phase = .failed("The package is gone: \(debPath)")
+            let message = "The package is gone: \(debPath)"
+            phase = .failed(message)
+            onResult?(false, message)
             return
         }
         log = ["Installing \(debPath)"]
 
         guard let dpkg = toolPath(named: "dpkg", store: store) else {
-            phase = .failed("dpkg was not found, so nothing can be installed. Install the 'dpkg' package first.")
+            let message = "dpkg was not found, so nothing can be installed. Install the 'dpkg' package first."
+            phase = .failed(message)
+            onResult?(false, message)
             return
         }
 
@@ -63,6 +70,7 @@ final class PackageInstaller: ObservableObject {
             guard let self else { return }
             if outcome.succeeded {
                 self.log.append("Installed.")
+                self.onResult?(true, "Installed \(debPath)")
                 if store.settings.respringAfterInstall {
                     self.respring(store: store)
                 } else {
@@ -79,6 +87,7 @@ final class PackageInstaller: ObservableObject {
                 }
                 self.log.append(reason)
                 self.phase = .failed(reason)
+                self.onResult?(false, reason)
             }
         }
     }

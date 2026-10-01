@@ -109,6 +109,21 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink(destination: AgentSettingsView(store: store) { }) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label("Assistant", systemImage: "sparkles")
+                            Text(store.agent.isConfigured ? store.agent.model : "Not configured")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("AI assistant")
+                } footer: {
+                    Text("The assistant reads the project, edits it, builds it and installs it — with your approval for anything that writes. It needs an OpenAI-compatible endpoint and a key of your own.")
+                }
+
+                Section {
                     DetailRow(label: "Version", value: Self.appVersion)
                     Link(destination: URL(string: "https://github.com/R0GUEEE/TheosStudio")!) {
                         Label("Source and issues", systemImage: "chevron.left.forwardslash.chevron.right")

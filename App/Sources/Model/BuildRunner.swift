@@ -39,8 +39,20 @@ final class BuildRunner: ObservableObject {
     /// for the current project's output.
     @Published private(set) var projectPath: String?
 
+    /// The result of one build, for callers that want to wait for it rather than
+    /// watch the published phase (the assistant, which needs the diagnostics as
+    /// a value).
+    struct Outcome {
+        var status: Int32
+        var diagnostics: [CompilerDiagnostic]
+        var artifact: String?
+        var succeeded: Bool { status == 0 }
+    }
+
     /// Called with the path of the `.deb` when a build finishes successfully.
     var onSucceeded: ((String) -> Void)?
+    /// Called once per build, successful or not.
+    var onOutcome: ((Outcome) -> Void)?
     /// Called with the failure message when a build cannot even start.
     var onStartFailure: ((String) -> Void)?
 
@@ -58,7 +70,15 @@ final class BuildRunner: ObservableObject {
 
     // MARK: - Starting
 
-    func build(project: Project, store: StudioStore, cleanOnly: Bool = false) {
+    /// `cleanOverride`/`finalOverride` exist for the assistant, which decides per
+    /// build rather than following the app's saved defaults.
+    func build(
+        project: Project,
+        store: StudioStore,
+        cleanOnly: Bool = false,
+        cleanOverride: Bool? = nil,
+        finalOverride: Bool? = nil
+    ) {
         guard !phase.isRunning else { return }
 
         lines = []
@@ -86,8 +106,8 @@ final class BuildRunner: ObservableObject {
         let request = BuildRequest(
             projectPath: project.path,
             scheme: scheme,
-            finalPackage: cleanOnly ? false : settings.finalPackage,
-            cleanFirst: !cleanOnly && settings.cleanBeforeBuild,
+            finalPackage: cleanOnly ? false : (finalOverride ?? settings.finalPackage),
+            cleanFirst: !cleanOnly && (cleanOverride ?? settings.cleanBeforeBuild),
             verbose: settings.verboseBuild,
             jobs: settings.jobs > 1 ? settings.jobs : nil
         )
@@ -165,6 +185,7 @@ final class BuildRunner: ObservableObject {
         running = nil
         guard let projectPath else {
             phase = status == 0 ? .succeeded : .failed(status)
+            onOutcome?(Outcome(status: status, diagnostics: diagnostics, artifact: artifact))
             return
         }
 
@@ -194,6 +215,7 @@ final class BuildRunner: ObservableObject {
             append(.init(kind: .notice, text: "Failed: \(reason)"))
             phase = .failed(status)
         }
+        onOutcome?(Outcome(status: status, diagnostics: diagnostics, artifact: artifact))
     }
 
     private func fail(_ error: Error) {
@@ -206,6 +228,7 @@ final class BuildRunner: ObservableObject {
         queue = []
         phase = .failed(127)
         onStartFailure?(message)
+        onOutcome?(Outcome(status: 127, diagnostics: [], artifact: nil))
     }
 
     private func append(_ line: ConsoleLine) {

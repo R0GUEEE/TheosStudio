@@ -25,12 +25,15 @@ struct RootView: View {
             ProjectListView(store: store)
                 .tabItem { Label("Projects", systemImage: "hammer") }
                 .tag(0)
+            AssistantView(store: store)
+                .tabItem { Label("Assistant", systemImage: "sparkles") }
+                .tag(1)
             ToolchainView(store: store)
                 .tabItem { Label("Toolchain", systemImage: "wrench.and.screwdriver") }
-                .tag(1)
+                .tag(2)
             SettingsView(store: store)
                 .tabItem { Label("Settings", systemImage: "gearshape") }
-                .tag(2)
+                .tag(3)
         }
         .alert(item: $store.banner) { message in
             Alert(
