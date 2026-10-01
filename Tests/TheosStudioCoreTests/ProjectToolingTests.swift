@@ -181,7 +181,9 @@ final class CrashLogParserTests: XCTestCase {
     func testACrashThatIsNotOursIsNotClaimed() {
         let summary = CrashLogParser.parse(
             fileName: "backboardd-2026-10-01-090000.ips",
-            contents: modern.replacingOccurrences(of: "MyTweak", with: "SomethingElse"),
+            contents: modern
+                .replacingOccurrences(of: "MyTweak", with: "SomethingElse")
+                .replacingOccurrences(of: "SpringBoard", with: "backboardd"),
             interestingNames: ["MyTweak", "com.example.mytweak"]
         )
         XCTAssertFalse(summary.mentionsOurs)
@@ -213,9 +215,11 @@ final class CrashLogParserTests: XCTestCase {
         XCTAssertTrue(summary.ownFrame?.contains("MyTweak.dylib") == true, summary.ownFrame ?? "")
     }
 
-    func testFileNameParsingWithoutADate() {
+    /// The `.ips` header names the process and the filename repeats it; when a
+    /// name has no timestamp in it, the report still parses and simply has no date.
+    func testAFileNameWithoutADateStillParses() {
         let summary = CrashLogParser.parse(fileName: "weird-name.ips", contents: modern, interestingNames: [])
-        XCTAssertEqual(summary.process, "weird")
+        XCTAssertEqual(summary.process, "SpringBoard", "the header is authoritative")
         XCTAssertNil(summary.date)
     }
 
