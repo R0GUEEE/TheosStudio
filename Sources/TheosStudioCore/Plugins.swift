@@ -76,6 +76,21 @@ public struct PluginSnippet: Codable, Equatable, Sendable, Identifiable {
         self.body = body.hasSuffix("\n") ? body : body + "\n"
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case id, title, summary, language, suggestedFileName, body
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        title = try c.decode(String.self, forKey: .title)
+        summary = try c.decodeIfPresent(String.self, forKey: .summary) ?? ""
+        language = try c.decodeIfPresent(SyntaxLanguage.self, forKey: .language) ?? .code
+        suggestedFileName = try c.decode(String.self, forKey: .suggestedFileName)
+        let decodedBody = try c.decode(String.self, forKey: .body)
+        body = decodedBody.hasSuffix("\n") ? decodedBody : decodedBody + "\n"
+    }
+
     public func snippet(pluginID: String) -> Snippet {
         Snippet(
             id: "plugin.\(pluginID).\(id)",
