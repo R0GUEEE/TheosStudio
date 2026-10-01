@@ -23,6 +23,17 @@ struct AgentSettings: Codable, Equatable {
     var extraInstructions: String = ""
     /// How many tool executions one request may cause before the app stops it.
     var maxToolCallsPerTurn: Int = 12
+    /// What it may do without asking. The sandbox rules are not affected by this.
+    var approvals: AgentApprovalPolicy = .askForChanges
+    /// Standing instructions, as switches.
+    var preferences: Set<AgentPreference> = []
+    /// Which tools are offered at all.
+    var enabledTools: Set<String> = AgentToolCatalog.names
+    var contextMode: AgentContextMode = .fullFiles
+    /// Characters of project content per request.
+    var contextBudget: Int = 60_000
+    /// Left at 0 to let the provider decide.
+    var maxTokens: Int = 0
     var runtimes: [String: ProviderRuntime] = [:]
 
     init() {}
@@ -52,6 +63,8 @@ struct AgentSettings: Codable, Equatable {
             : trimmedBase
         return URL(string: base + "/models")
     }
+
+    var contextModeOrDefault: AgentContextMode { contextMode }
 
     var isConfigured: Bool {
         !trimmedBase.isEmpty && !model.trimmingCharacters(in: .whitespaces).isEmpty
@@ -90,6 +103,7 @@ struct AgentSettings: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case providerID, baseURL, model, temperature, extraInstructions
         case maxToolCallsPerTurn, runtimes
+        case approvals, preferences, enabledTools, contextMode, contextBudget, maxTokens
     }
 
     /// Hand-written so that settings written by an older version still load: a
@@ -110,6 +124,12 @@ struct AgentSettings: Codable, Equatable {
         extraInstructions = value(.extraInstructions, "")
         maxToolCallsPerTurn = value(.maxToolCallsPerTurn, 12)
         runtimes = value(.runtimes, [:])
+        approvals = value(.approvals, .askForChanges)
+        preferences = value(.preferences, [])
+        enabledTools = value(.enabledTools, AgentToolCatalog.names)
+        contextMode = value(.contextMode, .fullFiles)
+        contextBudget = value(.contextBudget, 60_000)
+        maxTokens = value(.maxTokens, 0)
     }
 }
 

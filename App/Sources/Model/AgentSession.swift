@@ -56,7 +56,11 @@ struct AgentEnvironment {
             version: manifest.version,
             files: files,
             buildSummary: buildSummary,
-            toolchainSummary: toolchainSummary
+            toolchainSummary: toolchainSummary,
+            // A project can carry its own standing instructions, and the file is
+            // the natural place for them: it travels with the project, it shows
+            // up in the file list, and it is edited like anything else.
+            briefing: readFile("AGENT.md")
         )
     }
 
@@ -398,7 +402,7 @@ final class AgentSession: ObservableObject {
                     messages: buildMessages(),
                     settings: settings,
                     apiKey: apiKey,
-                    tools: AgentToolCatalog.all
+                    tools: enabledToolList
                 )
                 history.append(reply)
 
@@ -455,7 +459,12 @@ final class AgentSession: ObservableObject {
 
             entries.append(Entry(kind: .tool, title: action.summary, text: call.name))
 
-            switch AgentPolicy.decide(action, privilegesCanEscalate: environment.privilegesCanEscalate) {
+            switch AgentPolicy.decide(
+                action,
+                approvals: settings.approvals,
+                enabledTools: settings.enabledTools,
+                privilegesCanEscalate: environment.privilegesCanEscalate
+            ) {
             case .refused(let reason):
                 entries.append(Entry(kind: .note, text: reason))
                 history.append(.toolResult(id: call.id, text: "Error: \(reason)"))
@@ -468,7 +477,12 @@ final class AgentSession: ObservableObject {
                     record(text, for: call, action: action)
 
                 case .approval(let plan):
-                    if case .needsApproval(let reason) = AgentPolicy.decide(action, privilegesCanEscalate: environment.privilegesCanEscalate) {
+                    if case .needsApproval(let reason) = AgentPolicy.decide(
+                        action,
+                        approvals: settings.approvals,
+                        enabledTools: settings.enabledTools,
+                        privilegesCanEscalate: environment.privilegesCanEscalate
+                    ) {
                         awaiting = (call, action, plan)
                         pendingApproval = Approval(
                             id: UUID(),
@@ -495,16 +509,25 @@ final class AgentSession: ObservableObject {
         entries.append(Entry(kind: .result, title: action.summary, text: text))
     }
 
+    /// Only the tools the user left switched on.
+    private var enabledToolList: [AgentTool] {
+        AgentToolCatalog.all.filter { settings.enabledTools.contains($0.name) }
+    }
+
     private func buildMessages() -> [AgentMessage] {
         var messages: [AgentMessage] = []
         if let snapshot = environment?.snapshot(buildSummary: lastBuildSummary) {
-            messages.append(.system(AgentContext.systemPrompt(snapshot)))
+            messages.append(.system(AgentContext.systemPrompt(snapshot, preferences: settings.preferences)))
             if !settings.extraInstructions.trimmingCharacters(in: .whitespaces).isEmpty {
                 messages.append(.system(settings.extraInstructions))
             }
             // The project is re-read on every request, so an edit the user made
             // by hand between two turns is in front of the model immediately.
-            messages.append(.user(AgentContext.contextMessage(snapshot, budget: 40_000)))
+            messages.append(.user(AgentContext.contextMessage(
+                snapshot,
+                mode: settings.contextMode,
+                budget: settings.contextBudget
+            )))
         }
         messages.append(contentsOf: history)
         return messages

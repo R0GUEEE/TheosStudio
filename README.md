@@ -138,6 +138,16 @@ to match, a tweak with no hooking library in `Depends` installs and does nothing
 never fires** — so a private class name is something to confirm, not to assume —
 and a rootless package must never hardcode `/Library` or `/usr`.
 
+**Configuration** (Settings → Assistant) beyond the endpoint:
+
+| Setting | What it decides |
+| --- | --- |
+| **Approval** | Ask for every change (default), ask only to build or install, ask only to install, or do not ask. A looser setting never loosens the sandbox: writing outside the project, into build output, or reading the device's files stays refused. |
+| **Tools** | Which tools the model is offered at all; one that is off is refused by name if it asks anyway. Turning off build and install leaves a read-and-edit assistant. |
+| **Standing instructions** | Seven switches — explain first, smallest change, never assume a private API, log every hook, comment the why, say how to verify, keep the filter narrow — each one line in the system prompt. |
+| **Context** | Send the project's files or only their names, how many characters per request, and a reply-length cap for providers whose default truncates a tool call mid-argument. |
+| **AGENT.md** | A per-project briefing, written by you, sent on every request. It lives in the project, so it shows up in the file list and travels with the repository. The assistant offers to create one. |
+
 **Setup** (Assistant tab → Set up the model, or Settings → Assistant):
 
 > The key is kept in the iOS keychain under the provider's name. An ad-hoc signed

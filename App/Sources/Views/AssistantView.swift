@@ -63,6 +63,21 @@ struct AssistantView: View {
                         } label: {
                             Label("Assistant settings", systemImage: "gearshape")
                         }
+                        if let project {
+                            if hasBriefing(project) {
+                                Button {
+                                    openBriefing(project)
+                                } label: {
+                                    Label("Edit the project briefing", systemImage: "doc.text")
+                                }
+                            } else {
+                                Button {
+                                    createBriefing(project)
+                                } label: {
+                                    Label("Write a project briefing", systemImage: "doc.badge.plus")
+                                }
+                            }
+                        }
                         Button {
                             session.reset()
                         } label: {
@@ -257,6 +272,50 @@ struct AssistantView: View {
     ]
 
     // MARK: - Wiring
+
+    // MARK: - The project's briefing
+
+    /// A project can explain itself to the assistant, once, in a file that
+    /// travels with the project and shows up in its file list.
+    private func hasBriefing(_ project: Project) -> Bool {
+        FS.fileExists(project.path + "/AGENT.md")
+    }
+
+    private func createBriefing(_ project: Project) {
+        let template = """
+        # Briefing for the assistant
+
+        Read on every request. Keep it short: these are standing facts and rules,
+        not a conversation.
+
+        ## This project
+        - What it does:
+        - Which process it hooks:
+        - iOS versions it has to support:
+
+        ## Rules for you
+        - Change as little as possible, and say what you could not verify.
+        - Do not add a dependency without asking.
+        - Keep the injection filter narrow.
+        """
+        do {
+            try FS.write(template, to: project.path + "/AGENT.md")
+            store.banner = BannerMessage(
+                title: "Briefing created",
+                body: "AGENT.md is in the project and is sent with every request. It is in the file list, so it can be edited like anything else."
+            )
+        } catch {
+            store.banner = BannerMessage(title: "Could not write AGENT.md", body: error.localizedDescription)
+        }
+    }
+
+    private func openBriefing(_ project: Project) {
+        store.assistantProjectPath = project.path
+        store.banner = BannerMessage(
+            title: "AGENT.md",
+            body: "Open it from the project's file list to edit it — it is sent with every request."
+        )
+    }
 
     private func configureSession() {
         session.configure(

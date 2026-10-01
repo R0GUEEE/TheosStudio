@@ -23,6 +23,9 @@ public struct AgentProjectSnapshot: Equatable, Sendable {
     public var buildSummary: String?
     /// What this device can do: Theos location, SDKs, privileges.
     public var toolchainSummary: String?
+    /// The project's own AGENT.md, when it has one: standing instructions the user
+    /// wrote for this project, in the project.
+    public var briefing: String?
 
     public init(
         name: String,
@@ -33,7 +36,8 @@ public struct AgentProjectSnapshot: Equatable, Sendable {
         version: String? = nil,
         files: [ProjectFile] = [],
         buildSummary: String? = nil,
-        toolchainSummary: String? = nil
+        toolchainSummary: String? = nil,
+        briefing: String? = nil
     ) {
         self.name = name
         self.path = path
@@ -44,6 +48,7 @@ public struct AgentProjectSnapshot: Equatable, Sendable {
         self.files = files
         self.buildSummary = buildSummary
         self.toolchainSummary = toolchainSummary
+        self.briefing = briefing
     }
 }
 
@@ -116,7 +121,16 @@ public enum AgentContext {
     }
 
     /// The message that carries the project with every user turn.
-    public static func contextMessage(_ snapshot: AgentProjectSnapshot, budget: Int = 60_000) -> String {
+    ///
+    /// `namesOnly` sends the file list without the contents: the agent then reads
+    /// what it needs, which is smaller and keeps more of the project on the
+    /// device. The default sends the files, because a tweak is five small files
+    /// and it saves a round trip each.
+    public static func contextMessage(
+        _ snapshot: AgentProjectSnapshot,
+        mode: AgentContextMode = .fullFiles,
+        budget: Int = 60_000
+    ) -> String {
         var lines: [String] = []
         lines.append("# Project: \(snapshot.name)")
         var facts: [String] = []
@@ -145,11 +159,31 @@ public enum AgentContext {
         }
 
         lines.append("## Files")
-        lines.append(fileDigest(snapshot.files, budget: budget))
+        switch mode {
+        case .fullFiles:
+            lines.append(fileDigest(snapshot.files, budget: budget))
+        case .namesOnly:
+            let ordered = snapshot.files
+                .filter { relevance(of: $0.path) < 90 }
+                .sorted { lhs, rhs in
+                    let left = relevance(of: lhs.path)
+                    let right = relevance(of: rhs.path)
+                    if left != right { return left < right }
+                    return lhs.path.localizedStandardCompare(rhs.path) == .orderedAscending
+                }
+            for file in ordered {
+                lines.append("- \(file.path) (\(file.contents.utf8.count) bytes)")
+            }
+            lines.append("")
+            lines.append("The contents are not included. Use read_file to read what you need — start with the Makefile and the Logos source.")
+        }
         return lines.joined(separator: "\n")
     }
 
-    public static func systemPrompt(_ snapshot: AgentProjectSnapshot) -> String {
+    public static func systemPrompt(
+        _ snapshot: AgentProjectSnapshot,
+        preferences: Set<AgentPreference> = []
+    ) -> String {
         let name = snapshot.name
         let scheme = snapshot.scheme
 
@@ -198,6 +232,10 @@ public enum AgentContext {
         must build its own paths — never hardcode `/Library` or `/usr`. Under roothide there is no \
         fixed prefix at all: it is resolved per boot, which is what `jbroot()` is for.
 
+        # The user's briefing for this project
+
+        __BRIEFING__
+
         # How to work
 
         1. **Read before writing.** The files are below; use `read_file` for anything else you need.
@@ -225,6 +263,21 @@ public enum AgentContext {
         - End the turn by calling `finish` with a summary: what changed, what you checked, and \
         what the user should do next.
         """
+
+        let preferenceLines = AgentPreference.promptLines(for: preferences)
+        if !preferenceLines.isEmpty {
+            prompt += "\n\n# Standing instructions\n\n"
+            prompt += preferenceLines.map { "- " + $0 }.joined(separator: "\n")
+        }
+
+        // A briefing goes in where the user can see it is theirs, or is removed
+        // entirely so the prompt does not carry an empty heading.
+        if let briefing = snapshot.briefing?.trimmingCharacters(in: .whitespacesAndNewlines), !briefing.isEmpty {
+            prompt = prompt.replacingOccurrences(of: "__BRIEFING__", with: briefing)
+        } else if let range = prompt.range(of: "# The user's briefing for this project") {
+            let end = prompt.range(of: "# How to work")?.lowerBound ?? prompt.endIndex
+            prompt.removeSubrange(range.lowerBound..<end)
+        }
 
         if let kind = snapshot.kind, kind.needsHookingLibrary {
             prompt += "\n\nThis project is a \(kind.displayName.lowercased()): its package must depend on a hooking library, or it installs and does nothing."

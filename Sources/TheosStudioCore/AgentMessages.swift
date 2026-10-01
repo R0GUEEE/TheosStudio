@@ -235,24 +235,31 @@ public struct AgentRequest: Encodable, Sendable {
     public var tools: [AgentTool]?
     public var toolChoice: String?
     public var temperature: Double?
+    /// Worth setting on providers whose default is small: a tool call carrying a
+    /// whole file can be cut off mid-argument, which looks like the model
+    /// producing broken JSON rather than being truncated.
+    public var maxTokens: Int?
 
     public init(
         model: String,
         messages: [AgentMessage],
         tools: [AgentTool]? = nil,
         toolChoice: String? = nil,
-        temperature: Double? = nil
+        temperature: Double? = nil,
+        maxTokens: Int? = nil
     ) {
         self.model = model
         self.messages = messages
         self.tools = tools
         self.toolChoice = toolChoice
         self.temperature = temperature
+        self.maxTokens = maxTokens
     }
 
     private enum CodingKeys: String, CodingKey {
         case model, messages, tools, temperature
         case toolChoice = "tool_choice"
+        case maxTokens = "max_tokens"
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -264,6 +271,9 @@ public struct AgentRequest: Encodable, Sendable {
             try container.encode(toolChoice ?? "auto", forKey: .toolChoice)
         }
         try container.encodeIfPresent(temperature, forKey: .temperature)
+        if let maxTokens, maxTokens > 0 {
+            try container.encode(maxTokens, forKey: .maxTokens)
+        }
     }
 }
 

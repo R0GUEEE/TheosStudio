@@ -33,7 +33,11 @@ struct AgentSettingsView: View {
             credentialsSection
             modelSection
             testSection
+            approvalsSection
+            toolsSection
+            instructionsSection
             behaviourSection
+            contextSection
             privacySection
         }
         .navigationTitle("Assistant setup")
@@ -261,6 +265,135 @@ struct AgentSettingsView: View {
             Text("Test")
         } footer: {
             Text("Sends one short request: the same endpoint, key and model the assistant uses. Nothing about your project is included.")
+        }
+    }
+
+    // MARK: - Approvals
+
+    private var approvalsSection: some View {
+        Section {
+            Picker("Approval", selection: $store.agent.approvals) {
+                ForEach(AgentApprovalPolicy.allCases) { policy in
+                    Text(policy.displayName).tag(policy)
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+
+            Text(store.agent.approvals.summary).font(.footnote).foregroundColor(.secondary)
+
+            if store.agent.approvals == .fullAuto {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                    Text("Changes will be written without showing you a diff first. The transcript still records each one, and the rules that keep the agent inside the project still apply.")
+                        .font(.footnote)
+                }
+            }
+        } header: {
+            Text("Approval")
+        } footer: {
+            Text("Whatever this is set to, the agent cannot write outside the project, touch build output, or read the device's files: those are rules, not preferences.")
+        }
+    }
+
+    // MARK: - Tools
+
+    private var toolsSection: some View {
+        Section {
+            ForEach(AgentToolCatalog.all, id: \.name) { tool in
+                Toggle(isOn: Binding(
+                    get: { store.agent.enabledTools.contains(tool.name) },
+                    set: { isOn in
+                        if isOn {
+                            store.agent.enabledTools.insert(tool.name)
+                        } else {
+                            store.agent.enabledTools.remove(tool.name)
+                        }
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(tool.name).font(.system(size: 13, design: .monospaced))
+                        Text(shortDescription(tool))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+            }
+
+            HStack {
+                Button("All") { store.agent.enabledTools = AgentToolCatalog.names }
+                    .buttonStyle(.borderless)
+                Spacer()
+                Button("None") { store.agent.enabledTools = [] }
+                    .buttonStyle(.borderless)
+            }
+        } header: {
+            Text("Tools (\(store.agent.enabledTools.count) of \(AgentToolCatalog.names.count))")
+        } footer: {
+            Text("A tool that is off is not offered to the model at all, and refused by name if it asks anyway. Turning off install and build leaves an assistant that can only read and edit.")
+        }
+    }
+
+    private func shortDescription(_ tool: AgentTool) -> String {
+        guard let period = tool.description.firstIndex(of: ".") else { return tool.description }
+        return String(tool.description[tool.description.startIndex...period])
+    }
+
+    // MARK: - Instructions
+
+    private var instructionsSection: some View {
+        Section {
+            ForEach(AgentPreference.allCases) { preference in
+                Toggle(isOn: Binding(
+                    get: { store.agent.preferences.contains(preference) },
+                    set: { isOn in
+                        if isOn {
+                            store.agent.preferences.insert(preference)
+                        } else {
+                            store.agent.preferences.remove(preference)
+                        }
+                    }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(preference.displayName)
+                        Text(preference.summary)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        } header: {
+            Text("Standing instructions")
+        } footer: {
+            Text("Each of these is one line in the system prompt, written once rather than retyped. Anything else goes in the extra instructions below.")
+        }
+    }
+
+    // MARK: - Context
+
+    private var contextSection: some View {
+        Section {
+            Picker("What to send", selection: $store.agent.contextMode) {
+                ForEach(AgentContextMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            Text(store.agent.contextMode.summary).font(.footnote).foregroundColor(.secondary)
+
+            Stepper(value: $store.agent.contextBudget, in: 4_000...200_000, step: 4_000) {
+                Text("Project content per request: \(store.agent.contextBudget / 1000)k characters")
+            }
+
+            Stepper(value: $store.agent.maxTokens, in: 0...32_000, step: 1_024) {
+                Text(store.agent.maxTokens == 0
+                     ? "Max reply length: the provider's default"
+                     : "Max reply length: \(store.agent.maxTokens) tokens")
+            }
+        } header: {
+            Text("Context and length")
+        } footer: {
+            Text("A provider whose default reply length is small can cut a tool call off mid-argument, which looks like broken JSON. Setting a limit here is the fix.")
         }
     }
 

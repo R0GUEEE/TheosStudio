@@ -10,7 +10,35 @@ public enum AgentDecision: Equatable, Sendable {
     case refused(reason: String)
 }
 
+/// What an action does to the world, in the terms an approval policy is written
+/// in. Kept separate from the policy so "what is this" and "may it run" can be
+/// reasoned about (and tested) apart.
+public enum AgentAccess: Equatable, Sendable {
+    case read
+    case write
+    case build
+    case install
+}
+
 public enum AgentPolicy {
+
+    /// Classifies an action. A refused action never reaches here, so anything
+    /// unknown is treated as a write — the cautious answer.
+    public static func access(for action: AgentAction) -> AgentAccess {
+        switch action {
+        case .listFiles, .readFile, .readCrashes, .gitStatus, .gitDiff, .searchHeaders, .finish:
+            return .read
+        case .writeFile, .replaceInFile, .updateControl:
+            return .write
+        case .build:
+            return .build
+        case .install:
+            return .install
+        case .unknown:
+            return .write
+        }
+    }
+
 
     /// The largest file worth putting in front of a model or writing by hand.
     public static let maxFileBytes = 256 * 1024
@@ -41,7 +69,39 @@ public enum AgentPolicy {
         relativePath.hasPrefix("packages/") || relativePath.hasPrefix(".theos/") || relativePath.hasPrefix("obj/")
     }
 
-    public static func decide(_ action: AgentAction, privilegesCanEscalate: Bool) -> AgentDecision {
+    /// The full decision: sandbox rules first (which no setting can loosen), then
+    /// whether the tool is enabled, then whether this policy wants a tap.
+    public static func decide(
+        _ action: AgentAction,
+        approvals: AgentApprovalPolicy = .askForChanges,
+        enabledTools: Set<String>? = nil,
+        privilegesCanEscalate: Bool
+    ) -> AgentDecision {
+        if let enabledTools, !enabledTools.contains(action.toolName) {
+            return .refused(reason: "The \(action.toolName) tool is turned off in the assistant's settings. Ask the user to enable it, or do this another way.")
+        }
+
+        switch decideSandbox(action, privilegesCanEscalate: privilegesCanEscalate) {
+        case .refused(let reason):
+            return .refused(reason: reason)
+        case .allowed, .needsApproval:
+            let access = access(for: action)
+            guard approvals.needsApproval(for: access) else {
+                // Auto-approved: say so in the transcript's wording, but the
+                // decision is the same one the approval sheet would have made.
+                return .allowed
+            }
+            // The reason is what the approval sheet shows, so it comes from the
+            // sandbox pass rather than being invented here.
+            if case .needsApproval(let reason) = decideSandbox(action, privilegesCanEscalate: privilegesCanEscalate) {
+                return .needsApproval(reason: reason)
+            }
+            return .needsApproval(reason: action.summary)
+        }
+    }
+
+    /// The rules that hold whatever the settings say.
+    static func decideSandbox(_ action: AgentAction, privilegesCanEscalate: Bool) -> AgentDecision {
         switch action {
         case .listFiles, .finish, .readCrashes, .gitStatus, .searchHeaders:
             return .allowed
