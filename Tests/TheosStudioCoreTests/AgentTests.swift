@@ -395,7 +395,7 @@ final class AgentWireFormatTests: XCTestCase {
     }
 
     func testToolResultMessagesCarryTheCallIdentifier() throws {
-        let data = try JSONEncoder().encode(AgentMessage.toolResult(id: "call_9", "ok"))
+        let data = try JSONEncoder().encode(AgentMessage.toolResult(id: "call_9", text: "ok"))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(object["role"] as? String, "tool")
         XCTAssertEqual(object["tool_call_id"] as? String, "call_9")

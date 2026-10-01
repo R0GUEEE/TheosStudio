@@ -155,7 +155,7 @@ public struct AgentMessage: Equatable, Sendable {
     public static func system(_ text: String) -> AgentMessage { .init(role: .system, content: text) }
     public static func user(_ text: String) -> AgentMessage { .init(role: .user, content: text) }
     public static func assistant(_ text: String) -> AgentMessage { .init(role: .assistant, content: text) }
-    public static func toolResult(id: String, _ text: String) -> AgentMessage {
+    public static func toolResult(id: String, text: String) -> AgentMessage {
         .init(role: .tool, content: text, toolCallID: id)
     }
 }

@@ -12,7 +12,7 @@ extension String {
     ///
     /// The `utf8.contains(13)` guard keeps the common (LF-only) path allocation
     /// free, which matters because this runs on every keystroke-length parse.
-    func normalisedLineEndings() -> String {
+    public func normalisedLineEndings() -> String {
         guard utf8.contains(13) else { return self }
         return replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
