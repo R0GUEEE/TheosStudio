@@ -137,8 +137,7 @@ struct AgentSettings: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
         func value<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
-            guard let decoded = try? container.decodeIfPresent(T.self, forKey: key) else { return fallback }
-            return decoded ?? fallback
+            (try? container.decodeIfPresent(T.self, forKey: key)) ?? fallback
         }
 
         providerID = value(.providerID, AgentProvider.initial.id)
