@@ -66,7 +66,7 @@ struct ProjectDetailView: View {
                     }
                     Divider()
                     Button {
-                        store.assistantProjectPath = current.path
+                        store.openAssistant(for: current)
                     } label: {
                         Label("Work on this with the assistant", systemImage: "sparkles")
                     }
