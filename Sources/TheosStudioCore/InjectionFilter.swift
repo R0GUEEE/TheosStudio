@@ -42,15 +42,11 @@ public struct InjectionFilter: Equatable, Sendable {
         var remainder = list
         while let first = remainder.firstIndex(of: "\"") {
             let after = remainder[remainder.index(after: first)...]
-            guard let last = firstIndex(of: "\"", in: after) else { break }
+            guard let last = after.firstIndex(of: "\"") else { break }
             values.append(String(after[after.startIndex..<last]))
             remainder = after[after.index(after: last)...]
         }
         return values
-    }
-
-    static func firstIndex(of character: Character, in text: Substring) -> Substring.Index? {
-        text.firstIndex(of: character)
     }
 
     // MARK: - Editing
@@ -90,18 +86,18 @@ public struct InjectionFilter: Equatable, Sendable {
     /// Rewrites only the lists the form edits, leaving the rest of the file — and
     /// its comments — alone.
     public func serialized() -> String {
-        var text = raw.isEmpty ? defaultValue : raw
+        var text = raw.isEmpty ? Self.defaultValue : raw
 
         if !bundles.isEmpty || text.contains("Bundles") {
-            text = replaceList(named: "Bundles", with: bundles, in: text)
+            text = Self.replaceList(named: "Bundles", with: bundles, in: text)
         }
         if !executables.isEmpty || text.contains("Executables") {
-            text = replaceList(named: "Executables", with: executables, in: text)
+            text = Self.replaceList(named: "Executables", with: executables, in: text)
         }
         // A filter that names nothing is worse than useless; the default is the
         // one process the tweak templates hook.
         if bundles.isEmpty, executables.isEmpty, !text.contains("Filter") {
-            text = defaultValue
+            text = Self.defaultValue
         }
         return text
     }
@@ -127,9 +123,10 @@ public struct InjectionFilter: Equatable, Sendable {
 
         // Not there yet: put it inside the Filter dictionary, which is where the
         // injector looks for it.
-        if let filterRange = text.range(of: "{", range: text.range(of: "Filter")?.upperBound ?? text.startIndex..<text.endIndex) {
+        if let filterKey = text.range(of: "Filter"),
+           let open = text.range(of: "{", range: filterKey.upperBound..<text.endIndex) {
             var updated = text
-            updated.insert(contentsOf: "\n        \(key) = \(list);", at: filterRange.upperBound)
+            updated.insert(contentsOf: "\n        \(key) = \(list);", at: open.upperBound)
             return updated
         }
         return text
