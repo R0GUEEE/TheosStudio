@@ -454,6 +454,9 @@ struct ProjectDetailView: View {
             NavigationLink(destination: ProjectSearchView(store: store, project: current)) {
                 Label("Find in project", systemImage: "text.magnifyingglass")
             }
+            NavigationLink(destination: ProjectInsightsView(project: current)) {
+                Label("Project insights", systemImage: "chart.bar.doc.horizontal")
+            }
             NavigationLink(destination: MakefileSettingsView(store: store, project: current)) {
                 Label("Build settings", systemImage: "slider.horizontal.3")
             }
