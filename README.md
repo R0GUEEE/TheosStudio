@@ -44,6 +44,10 @@ This repository contains:
   `make`, `clang`, `ldid`, `dpkg-deb`, `perl` (Logos is a Perl script). Missing
   tools come with the `apt-get install` line that fixes them, ready to run — or
   installed from the app when it is allowed to.
+- **Assistant** — an AI agent that works on one project: it reads the files, edits
+  them, builds, and reads the compiler's answer, stopping for your approval before
+  anything is written. Bring your own model (any OpenAI-compatible endpoint); the
+  key stays in the keychain.
 - **Installing Theos** — the official installer's on-device path, split along the
   line that decides whether it works: cloning Theos and unpacking a patched SDK is
   copying files into a folder and needs no root at all, while the dependency
@@ -71,6 +75,49 @@ that does not need a terminal.
   Toolchain tab clones Theos and unpackes an SDK from `theos/sdks` into a folder
   it owns — no root needed — or runs the package install for `clang`, `ldid`,
   `git`, `perl` and the rest when it can.
+
+## The assistant
+
+An agent with a small, deliberate set of tools, scoped to one project:
+
+| Tool | Approval |
+| --- | --- |
+| `list_files`, `read_file` | none — reading is free |
+| `write_file`, `replace_in_file`, `update_control` | **you see a diff and approve it** |
+| `build` (`make package`) | approve; the compiler's errors and warnings come back as the tool result |
+| `install` (`dpkg` + respring) | approve |
+
+Three things make it more than a chat box with a file editor:
+
+- **It reads the build's answer.** `build` returns the diagnostics, so a failing
+  compile is a loop the agent can close by itself: fix, build, read, fix.
+- **Nothing is written behind your back.** Every mutating call stops and shows the
+  change as a unified diff first. Denying one hands the refusal back to the model
+  as the tool result, so it asks instead of repeating itself.
+- **It cannot leave the project.** Paths are relative to the project root;
+  absolute paths, `..` and build output (`packages/`, `.theos/`) are refused by a
+  tested function, not by asking the model nicely in the prompt.
+
+The system prompt is where the domain knowledge lives, and it is a reviewed,
+tested part of the engine: `TWEAK_NAME` is what the filter plist's file name has
+to match, a tweak with no hooking library in `Depends` installs and does nothing,
+`%orig` calls the original, version-specific hooks belong in a `%group` behind
+`@available`, a hook for a class that does not exist on the device **silently
+never fires** — so a private class name is something to confirm, not to assume —
+and a rootless package must never hardcode `/Library` or `/usr`.
+
+**Setup:** Settings → Assistant. Any OpenAI-compatible `/chat/completions`
+endpoint (OpenAI, a gateway, a machine on your LAN), a model name, and an API key.
+The key is stored in the keychain and sent only to that endpoint.
+
+**What each request sends:** the project's text files (Makefile, control, Logos
+sources, plists, README), the last build's diagnostics, and the conversation.
+Nothing else on the device is read or sent.
+
+**What it cannot do:** confirm a private class or selector exists on your iOS
+version — it has no way to inspect the device's binaries, and it is told to say
+so rather than guess. Verifying a hook is still `FLEX`/`frida-trace` and a
+respring.
 
 ## Permissions
 
