@@ -28,6 +28,15 @@ struct AgentEnvironment {
     var gitDiff: @MainActor (String?) async -> String
     /// Header search, which indexes on first use and is bounded.
     var searchHeaders: @MainActor (String) async -> [HeaderDeclaration]
+    var workspaceStatus: @MainActor () -> String
+    var projectHealth: @MainActor () -> String
+    var projectStats: @MainActor () -> String
+    var launchTargets: @MainActor () -> String
+    var inspectPackage: @MainActor () -> String
+    var installedPackages: @MainActor (String?) -> String
+    var plugins: @MainActor () -> String
+    var runPlugin: @MainActor (String, String) async -> String
+    var restartTarget: @MainActor (String) async -> String
     var privilegesCanEscalate: Bool
     var toolchainSummary: String?
 
@@ -57,6 +66,7 @@ struct AgentEnvironment {
             files: files,
             buildSummary: buildSummary,
             toolchainSummary: toolchainSummary,
+            appSummary: workspaceStatus(),
             // A project can carry its own standing instructions, and the file is
             // the natural place for them: it travels with the project, it shows
             // up in the file list, and it is edited like anything else.
@@ -209,6 +219,37 @@ enum AgentExecutor {
 
         case .gitDiff(let path):
             return .approval(Plan(diff: nil) { await environment.gitDiff(path) })
+
+        case .workspaceStatus:
+            return .immediate(environment.workspaceStatus())
+
+        case .projectHealth:
+            return .immediate(environment.projectHealth())
+
+        case .projectStats:
+            return .immediate(environment.projectStats())
+
+        case .listLaunchTargets:
+            return .immediate(environment.launchTargets())
+
+        case .inspectPackage:
+            return .immediate(environment.inspectPackage())
+
+        case .installedPackages(let query):
+            return .immediate(environment.installedPackages(query))
+
+        case .listPlugins:
+            return .immediate(environment.plugins())
+
+        case .runPlugin(let pluginID, let actionID):
+            return .approval(Plan(diff: nil) {
+                await environment.runPlugin(pluginID, actionID)
+            })
+
+        case .restartTarget(let name):
+            return .approval(Plan(diff: nil) {
+                await environment.restartTarget(name)
+            })
 
         case .finish(let summary):
             return .immediate("Turn finished: \(summary)")
