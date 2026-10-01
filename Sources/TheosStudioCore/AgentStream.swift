@@ -43,7 +43,11 @@ public struct AgentStreamDecoder {
         if payload == "[DONE]" {
             return [.finished(reason: finishReason)]
         }
+        return consume(payload: payload)
+    }
 
+    /// One JSON chunk, with or without the `data:` prefix.
+    mutating func consume(payload: String) -> [AgentStreamEvent] {
         guard let data = payload.data(using: .utf8) else { return [] }
         guard let chunk = try? JSONDecoder().decode(Chunk.self, from: data) else {
             // A malformed chunk is not worth failing a turn over; the assembled
@@ -109,10 +113,14 @@ public struct AgentStreamDecoder {
         return events
     }
 
-    /// Feeds a whole body at once — used when a gateway answers with a plain
-    /// response rather than a stream.
+    /// Feeds a whole body: either a stream, or — for a gateway that ignored
+    /// `stream: true` — one plain completion, which has no `data:` prefix at all.
     public mutating func consume(body: String) -> [AgentStreamEvent] {
-        body.normalisedLineEndings()
+        let text = body.normalisedLineEndings()
+        guard text.contains("data:") else {
+            return consume(payload: text.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return text
             .split(separator: "\n", omittingEmptySubsequences: false)
             .flatMap { consume(line: String($0)) }
     }
