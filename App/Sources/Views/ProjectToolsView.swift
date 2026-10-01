@@ -172,6 +172,9 @@ struct PackageInspectionView: View {
     @State private var listingError: String?
     @State private var missingDependencies: [DependencyGroup] = []
     @State private var checkedDependencies = false
+    @State private var declaredConflicts: [String] = []
+    @State private var preview: InstallPreview?
+    @State private var isPreviewing = false
 
     var body: some View {
         List {
@@ -187,6 +190,45 @@ struct PackageInspectionView: View {
                 }
             } header: {
                 Text("Package")
+            }
+
+            if !declaredConflicts.isEmpty || preview != nil || store.privileges.canEscalate {
+                Section {
+                    if !declaredConflicts.isEmpty {
+                        ForEach(declaredConflicts, id: \.self) { conflict in
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                                Text("Replaces or conflicts with \(conflict)")
+                                    .font(.footnote)
+                            }
+                        }
+                    }
+
+                    Button {
+                        Task { await dryRun() }
+                    } label: {
+                        if isPreviewing {
+                            HStack { ProgressView().scaleEffect(0.7); Text("Asking dpkg…") }
+                        } else {
+                            Label("Ask dpkg what it would do", systemImage: "questionmark.circle")
+                        }
+                    }
+                    .disabled(isPreviewing)
+
+                    if let preview {
+                        DetailRow(label: "Verdict", value: preview.summary, color: preview.isClean ? .green : .orange)
+                        if let package = preview.package {
+                            DetailRow(label: "Package", value: package, monospaced: true)
+                        }
+                        ForEach(preview.warnings.prefix(4), id: \.self) { warning in
+                            Text(warning).font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Before installing")
+                } footer: {
+                    Text("A dry run is dpkg's own answer, and it needs the same privilege as installing. What the package says about itself — Conflicts, Replaces — needs nothing and is shown above it.")
+                }
             }
 
             if checkedDependencies {
@@ -250,6 +292,19 @@ struct PackageInspectionView: View {
         .task { await inspect() }
     }
 
+    private func dryRun() async {
+        isPreviewing = true
+        if let result = await DpkgService.dryRunInstall(debPath: debPath, store: store) {
+            preview = InstallPreviewParser.parse(result.output)
+            if !result.succeeded, preview?.isClean == true {
+                preview?.errors = ["dpkg exited with status \(result.status) without a message the app could read."]
+            }
+        } else {
+            preview = InstallPreview(errors: ["dpkg is not installed, so it cannot be asked."])
+        }
+        isPreviewing = false
+    }
+
     private func inspect() async {
         guard let result = await DpkgService.list(debPath: debPath, store: store) else {
             listingError = "dpkg-deb was not found, so the contents cannot be listed. It comes with the dpkg package."
@@ -263,6 +318,8 @@ struct PackageInspectionView: View {
         let controlText = await DpkgService.control(debPath: debPath, store: store)?.output ?? ""
         let control = ControlFile.parse(controlText)
         rows = DebListing.summary(entries: entries, control: control, scheme: project.scheme ?? .rootless)
+
+        declaredConflicts = InstallPreviewParser.declaredConflicts(inControl: controlText)
 
         missingDependencies = await PublishService.missingDependencies(debPath: debPath, store: store)
         checkedDependencies = true
@@ -280,6 +337,13 @@ enum DpkgService {
     static func control(debPath: String, store: StudioStore) async -> CommandResult? {
         // `-f` with no fields prints the whole control file.
         await run(["-f", debPath], store: store)
+    }
+
+    /// `dpkg --dry-run -i`: dpkg says what it would do without doing it. It needs
+    /// the same privilege as installing, so the package screen only offers it when
+    /// the app can escalate.
+    static func dryRunInstall(debPath: String, store: StudioStore) async -> CommandResult? {
+        await run(["--dry-run", "--install", debPath], store: store)
     }
 
     private static func run(_ arguments: [String], store: StudioStore) async -> CommandResult? {

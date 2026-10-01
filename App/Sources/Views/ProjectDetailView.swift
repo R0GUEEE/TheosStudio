@@ -477,6 +477,9 @@ struct ProjectDetailView: View {
             NavigationLink(destination: CrashLogsView(store: store, project: current)) {
                 Label("Crashes", systemImage: "exclamationmark.triangle")
             }
+            NavigationLink(destination: LogsView(store: store, project: current)) {
+                Label("Log", systemImage: "doc.text.magnifyingglass")
+            }
         } header: {
             Text("Diagnose")
         } footer: {

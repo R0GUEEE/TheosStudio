@@ -137,6 +137,21 @@ public enum InstallPreviewParser {
         return preview
     }
 
+    /// The `Conflicts:` and `Replaces:` fields of a control file.
+    ///
+    /// Reading them needs no privileges, unlike a dry run, so the package screen
+    /// can say what a package would replace before anything is run — which is the
+    /// half of a conflict check that matters most of the time.
+    public static func declaredConflicts(inControl control: String) -> [String] {
+        let file = ControlFile.parse(control)
+        let text = [file["Conflicts"], file["Replaces"]]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
+        guard !text.isEmpty else { return [] }
+        return DependencyCheck.parse(text).map(\.display)
+    }
+
     /// `Unpacking com.example.a (1.0) over (0.9) ...` → `com.example.a (1.0)`.
     static func packageName(from line: String) -> String? {
         var text = line

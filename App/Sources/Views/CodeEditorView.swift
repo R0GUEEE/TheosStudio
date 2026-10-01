@@ -2,7 +2,8 @@ import SwiftUI
 import UIKit
 import TheosStudioCore
 
-/// A text file, editable, with the engine's syntax tokens turned into colours.
+/// A text file, editable, with the engine's syntax tokens turned into colours and
+/// the line numbers in a gutter beside it.
 ///
 /// The editor saves explicitly *and* on the way out: losing a tweak because the
 /// back button was tapped is the kind of bug that ends a session.
@@ -15,6 +16,8 @@ struct CodeEditorView: View {
     @State private var text = ""
     @State private var saved = ""
     @State private var loadFailure: String?
+    @State private var isFinding = false
+    @State private var scrollRequest: Int?
 
     private var language: SyntaxLanguage { SyntaxLanguage.forFileName(path) }
     private var fileName: String { (path as NSString).lastPathComponent }
@@ -30,26 +33,26 @@ struct CodeEditorView: View {
                     .padding(.horizontal)
                     .padding(.vertical, 6)
             }
-            CodeTextView(text: $text, language: language, fontSize: fontSize, scrollToLine: scrollToLine)
+            CodeTextView(
+                text: $text,
+                language: language,
+                fontSize: fontSize,
+                scrollToLine: scrollRequest ?? scrollToLine,
+                showsLineNumbers: showsLineNumbers
+            )
             Divider()
-            HStack(spacing: 12) {
-                Text(languageName)
-                Spacer()
-                Text("\(text.split(separator: "\n", omittingEmptySubsequences: false).count) lines")
-                Text("\(text.utf8.count) bytes")
-                if isModified {
-                    Text("modified").foregroundColor(.orange)
-                }
-            }
-            .font(.caption)
-            .foregroundColor(.secondary)
-            .padding(.horizontal)
-            .padding(.vertical, 6)
-            .background(Color(.secondarySystemBackground))
+            statusBar
         }
         .navigationTitle(fileName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    isFinding = true
+                } label: {
+                    Label("Find", systemImage: "magnifyingglass")
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Section("Append a snippet") {
@@ -65,8 +68,27 @@ struct CodeEditorView: View {
                 Button("Save", action: save).disabled(!isModified)
             }
         }
+        .sheet(isPresented: $isFinding) {
+            NavigationView {
+                FindReplaceView(
+                    text: $text,
+                    onJump: { line in
+                        scrollRequest = line
+                        isFinding = false
+                    },
+                    onReplace: { save() }
+                )
+            }
+            .navigationViewStyle(.stack)
+        }
         .onAppear(perform: load)
         .onDisappear(perform: save)
+    }
+
+    /// Kept in the app's settings so someone reading on a phone in the dark can
+    /// turn it off; line numbers are useful more often than they are in the way.
+    private var showsLineNumbers: Bool {
+        UserDefaults.standard.object(forKey: "com.r0gueee.theosstudio.line-numbers") as? Bool ?? true
     }
 
     private var languageName: String {
@@ -110,23 +132,158 @@ struct CodeEditorView: View {
             loadFailure = "Could not save: \(error.localizedDescription)"
         }
     }
+
+    private var statusBar: some View {
+        HStack(spacing: 12) {
+            Text(languageName)
+            Spacer()
+            Text("\(text.split(separator: "\n", omittingEmptySubsequences: false).count) lines")
+            Text("\(text.utf8.count) bytes")
+            if isModified {
+                Text("modified").foregroundColor(.orange)
+            }
+        }
+        .font(.caption)
+        .foregroundColor(.secondary)
+        .padding(.horizontal)
+        .padding(.vertical, 6)
+        .background(Color(.secondarySystemBackground))
+    }
 }
 
-/// The `UITextView` itself. SwiftUI's `TextEditor` cannot colour ranges, and
-/// colouring ranges is most of what makes Logos readable.
+// MARK: - Find and replace
+
+/// Find in one file, with replace.
+///
+/// Reuses the project search's matching, which is why it reports a count rather
+/// than a silent `true`: "replaced 0" is the answer someone needs when their text
+/// did not match.
+@MainActor
+struct FindReplaceView: View {
+
+    @Binding var text: String
+    var onJump: (Int) -> Void
+    var onReplace: () -> Void
+
+    @State private var query = ""
+    @State private var replacement = ""
+    @State private var caseSensitive = false
+    @State private var outcome: String?
+    @Environment(\.presentationMode) private var presentation
+
+    private var matches: [ProjectMatch] {
+        ProjectSearch.matches(
+            in: [ProjectFile(path: "", contents: text)],
+            query: query,
+            caseSensitive: caseSensitive
+        )
+    }
+
+    var body: some View {
+        List {
+            Section {
+                TextField("Find", text: $query)
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+                    .font(.system(size: 13, design: .monospaced))
+                Toggle("Match case", isOn: $caseSensitive)
+            }
+
+            if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+                Section {
+                    ForEach(matches.prefix(50)) { match in
+                        Button {
+                            onJump(match.line)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(match.text.trimmingCharacters(in: .whitespaces))
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .lineLimit(2)
+                                Text("line \(match.line), column \(match.column)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if matches.count > 50 {
+                        Text("\(matches.count - 50) more matches")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                } header: {
+                    Text("\(matches.count) match\(matches.count == 1 ? "" : "es")")
+                }
+
+                Section {
+                    TextField("Replace with", text: $replacement)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                        .font(.system(size: 13, design: .monospaced))
+                    Button {
+                        replaceAll()
+                    } label: {
+                        Label("Replace all", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .disabled(matches.isEmpty)
+                } footer: {
+                    if let outcome {
+                        Text(outcome).foregroundColor(outcome.hasPrefix("Replaced") ? .green : .secondary)
+                    } else {
+                        Text("Replacing writes the file. It is saved immediately, so there is nothing else to tap.")
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Find")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Done") { presentation.wrappedValue.dismiss() }
+            }
+        }
+    }
+
+    private func replaceAll() {
+        let result = ProjectSearch.replacingOccurrences(
+            in: text,
+            query: query,
+            with: replacement,
+            caseSensitive: caseSensitive
+        )
+        guard result.count > 0 else {
+            outcome = "Nothing matched, so nothing was replaced."
+            return
+        }
+        text = result.text
+        outcome = "Replaced \(result.count) occurrence\(result.count == 1 ? "" : "s")."
+        onReplace()
+    }
+}
+
+// MARK: - The text view
+
+/// The editor: a gutter, and the text view beside it.
+///
+/// SwiftUI's `TextEditor` cannot colour ranges or show line numbers, and both are
+/// most of what makes Logos readable on a phone.
 struct CodeTextView: UIViewRepresentable {
 
     @Binding var text: String
     let language: SyntaxLanguage
     let fontSize: CGFloat
     let scrollToLine: Int?
+    var showsLineNumbers: Bool = true
 
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text, language: language, fontSize: fontSize)
     }
 
-    func makeUIView(context: Context) -> UITextView {
-        let view = UITextView()
+    func makeUIView(context: Context) -> CodeEditorContainer {
+        let container = CodeEditorContainer()
+        let view = container.textView
+
         view.delegate = context.coordinator
         // Every "helpful" keyboard feature is wrong for code.
         view.autocorrectionType = .no
@@ -141,23 +298,35 @@ struct CodeTextView: UIViewRepresentable {
         view.font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         view.text = text
         view.inputAccessoryView = context.coordinator.makeAccessoryView()
+
+        container.showsLineNumbers = showsLineNumbers
+        container.gutter.textView = view
+        context.coordinator.container = container
         context.coordinator.highlight(view)
-        return view
+
+        return container
     }
 
-    func updateUIView(_ view: UITextView, context: Context) {
+    func updateUIView(_ container: CodeEditorContainer, context: Context) {
         let coordinator = context.coordinator
+        let view = container.textView
+
         coordinator.language = language
+        container.showsLineNumbers = showsLineNumbers
+        container.setNeedsLayout()
+
         if view.font?.pointSize != fontSize {
             view.font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
             coordinator.highlight(view)
+            container.gutter.setNeedsDisplay()
         }
         if !coordinator.isEditing, view.text != text {
             view.text = text
             coordinator.highlight(view)
+            container.gutter.setNeedsDisplay()
         }
-        if let line = scrollToLine, !coordinator.didScroll {
-            coordinator.didScroll = true
+        if let line = scrollToLine, coordinator.lastScrolledLine != line {
+            coordinator.lastScrolledLine = line
             coordinator.scroll(toLine: line, in: view)
         }
     }
@@ -167,7 +336,8 @@ struct CodeTextView: UIViewRepresentable {
         var language: SyntaxLanguage
         var fontSize: CGFloat
         var isEditing = false
-        var didScroll = false
+        var lastScrolledLine: Int?
+        weak var container: CodeEditorContainer?
         private var binding: Binding<String>
         /// Highlighting writes attributes into the same storage the delegate is
         /// notified about, so it has to be re-entrancy safe.
@@ -200,11 +370,19 @@ struct CodeTextView: UIViewRepresentable {
             isEditing = true
             editingView = textView
         }
+
         func textViewDidEndEditing(_ textView: UITextView) { isEditing = false }
 
         func textViewDidChange(_ textView: UITextView) {
             binding.wrappedValue = textView.text
             highlight(textView)
+            container?.gutter.setNeedsDisplay()
+        }
+
+        /// The gutter draws in the text view's coordinate space, so it has to be
+        /// redrawn when that space moves.
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            container?.gutter.setNeedsDisplay()
         }
 
         func scroll(toLine line: Int, in view: UITextView) {
@@ -264,5 +442,109 @@ struct CodeTextView: UIViewRepresentable {
         /// The text view the accessory is attached to. Held weakly so a dismissed
         /// editor is not kept alive by its own keyboard toolbar.
         weak var editingView: UITextView?
+    }
+}
+
+/// Holds the gutter and the text view, because a `UIViewRepresentable` is one
+/// view and the editor is two.
+final class CodeEditorContainer: UIView {
+
+    /// Built on a TextKit 1 stack on purpose: the gutter asks the layout manager
+    /// where each paragraph sits, and iOS 16's TextKit 2 text views only expose one
+    /// in compatibility mode.
+    let textView: UITextView
+    let gutter = LineNumberGutterView()
+
+    var showsLineNumbers: Bool = true {
+        didSet {
+            gutterWidth = showsLineNumbers ? 46 : 0
+            setNeedsLayout()
+        }
+    }
+
+    private var gutterWidth: CGFloat = 46
+    private let gutterSpace = 4
+
+    override init(frame: CGRect) {
+        let storage = NSTextStorage()
+        let layoutManager = NSLayoutManager()
+        storage.addLayoutManager(layoutManager)
+        let container = NSTextContainer(size: CGSize(width: 0, height: .greatestFiniteMagnitude))
+        container.widthTracksTextView = true
+        layoutManager.addTextContainer(container)
+        textView = UITextView(frame: .zero, textContainer: container)
+
+        super.init(frame: frame)
+        backgroundColor = .systemBackground
+        addSubview(gutter)
+        addSubview(textView)
+        textView.backgroundColor = .clear
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let width = gutterWidth > 0 ? gutterWidth + gutterSpace : 0
+        gutter.frame = CGRect(x: 0, y: 0, width: width, height: bounds.height)
+        gutter.isHidden = gutterWidth == 0
+        textView.frame = CGRect(x: width, y: 0, width: bounds.width - width, height: bounds.height)
+        gutter.setNeedsDisplay()
+    }
+}
+
+/// The line numbers, drawn where the text view puts each paragraph — which is
+/// what keeps them aligned when a long line wraps, as lines do on a phone.
+final class LineNumberGutterView: UIView {
+
+    weak var textView: UITextView?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isOpaque = false
+        backgroundColor = .secondarySystemBackground
+        isUserInteractionEnabled = false
+        contentMode = .redraw
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func draw(_ rect: CGRect) {
+        guard let textView else { return }
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        context.setFillColor(UIColor.secondarySystemBackground.cgColor)
+        context.fill(rect)
+
+        let fontSize = max(8, (textView.font?.pointSize ?? 12) * 0.8)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .regular),
+            .foregroundColor: UIColor.secondaryLabel,
+        ]
+
+        let text = textView.text as NSString
+        let inset = textView.textContainerInset
+        let offset = textView.contentOffset.y
+        let layoutManager = textView.layoutManager
+        let container = textView.textContainer
+
+        var lineNumber = 1
+        let full = NSRange(location: 0, length: text.length)
+
+        text.enumerateSubstrings(in: full, options: [.byParagraphs, .substringNotRequired]) { _, range, _, _ in
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            let lineRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: container)
+            let y = lineRect.minY + inset.top - offset
+            let label = "\\(lineNumber)" as NSString
+            let size = label.size(withAttributes: attributes)
+            label.draw(at: CGPoint(x: bounds.width - size.width - 6, y: y), withAttributes: attributes)
+            lineNumber += 1
+        }
+
+        // An empty file still has a first line.
+        if text.length == 0 {
+            let label = "1" as NSString
+            let size = label.size(withAttributes: attributes)
+            label.draw(at: CGPoint(x: bounds.width - size.width - 6, y: inset.top - offset), withAttributes: attributes)
+        }
     }
 }

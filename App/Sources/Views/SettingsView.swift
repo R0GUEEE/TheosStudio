@@ -96,8 +96,14 @@ struct SettingsView: View {
                     Stepper(value: $store.settings.editorFontSize, in: 10...20, step: 1) {
                         Text("Editor font size: \(Int(store.settings.editorFontSize)) pt")
                     }
+                    Toggle("Show line numbers", isOn: Binding(
+                        get: { UserDefaults.standard.object(forKey: "com.r0gueee.theosstudio.line-numbers") as? Bool ?? true },
+                        set: { UserDefaults.standard.set($0, forKey: "com.r0gueee.theosstudio.line-numbers") }
+                    ))
                 } header: {
                     Text("Editor")
+                } footer: {
+                    Text("Line numbers matter more here than in a desktop editor: every compiler error and every crash frame is reported as a line in a file.")
                 }
 
                 Section {

@@ -129,6 +129,21 @@ final class InstallPreviewParserTests: XCTestCase {
         XCTAssertEqual(preview.replacing, "2.0")
     }
 
+    /// The check that needs no privileges: what the package itself says it
+    /// replaces.
+    func testDeclaredConflictsComeFromTheControlFile() {
+        let control = """
+        Package: com.example.b
+        Version: 1.0
+        Conflicts: com.example.a (<< 2.0)
+        Replaces: com.example.old
+        """
+        let conflicts = InstallPreviewParser.declaredConflicts(inControl: control)
+        XCTAssertEqual(conflicts, ["com.example.a (<< 2.0)", "com.example.old"])
+
+        XCTAssertTrue(InstallPreviewParser.declaredConflicts(inControl: "Package: a\nVersion: 1\n").isEmpty)
+    }
+
     func testEmptyOutputIsNotAFailure() {
         let preview = InstallPreviewParser.parse("")
         XCTAssertTrue(preview.isClean)
