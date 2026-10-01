@@ -262,37 +262,35 @@ public struct AgentRequest: Encodable, Sendable {
         self.extraBody = extraBody
     }
 
-    /// A coding key for a name that is not in the schema above.
-    private struct DynamicKey: CodingKey {
+    /// One key type for everything: a keyed container is typed by its key, so a
+    /// merged-in field whose name the schema does not know needs a dynamic key —
+    /// and two key types cannot share one container, which is why the schema
+    /// fields are written by name here too.
+    private struct AnyKey: CodingKey {
         var stringValue: String
-        init(stringValue: String) { self.stringValue = stringValue }
         var intValue: Int? { nil }
+        init(stringValue: String) { self.stringValue = stringValue }
         init?(intValue: Int) { nil }
     }
 
-    private enum CodingKeys: String, CodingKey {
-        case model, messages, tools, temperature
-        case toolChoice = "tool_choice"
-        case maxTokens = "max_tokens"
-    }
-
     public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
+        var container = encoder.container(keyedBy: AnyKey.self)
 
-        for (key, value) in (extraBody ?? [:]).sorted(by: { $0.key < $1.key }) {
-            guard !key.isEmpty else { continue }
-            try container.encode(value, forKey: DynamicKey(stringValue: key))
+        // Extras first: the typed fields below overwrite them, so a typo in there
+        // cannot change the model or drop the conversation.
+        for (key, value) in (extraBody ?? [:]).sorted(by: { $0.key < $1.key }) where !key.isEmpty {
+            try container.encode(value, forKey: AnyKey(stringValue: key))
         }
 
-        try container.encode(model, forKey: .model)
-        try container.encode(messages, forKey: .messages)
+        try container.encode(model, forKey: AnyKey(stringValue: "model"))
+        try container.encode(messages, forKey: AnyKey(stringValue: "messages"))
         if let tools, !tools.isEmpty {
-            try container.encode(tools, forKey: .tools)
-            try container.encode(toolChoice ?? "auto", forKey: .toolChoice)
+            try container.encode(tools, forKey: AnyKey(stringValue: "tools"))
+            try container.encode(toolChoice ?? "auto", forKey: AnyKey(stringValue: "tool_choice"))
         }
-        try container.encodeIfPresent(temperature, forKey: .temperature)
+        try container.encodeIfPresent(temperature, forKey: AnyKey(stringValue: "temperature"))
         if let maxTokens, maxTokens > 0 {
-            try container.encode(maxTokens, forKey: .maxTokens)
+            try container.encode(maxTokens, forKey: AnyKey(stringValue: "max_tokens"))
         }
     }
 }
