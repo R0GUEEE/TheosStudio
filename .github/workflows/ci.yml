@@ -67,7 +67,7 @@ jobs:
           # XCTest prints each test as it starts, so a test that never returns names
           # itself in the log rather than consuming the job's timeout in silence —
           # which is what an infinite loop in the Makefile editor did, twice.
-          swift test --filter 'MakefileEditorTests|CrashLogParserTests|GitPorcelainTests|DebListingTests|TheosInstallerTests|AgentProviderTests|AgentModelListTests|PrivilegesTests'
+          swift test --filter 'MakefileEditorTests|CrashLogParserTests|GitPorcelainTests|DebListingTests|TheosInstallerTests|AgentProviderTests|AgentModelListTests|PrivilegesTests|PluginTests'
 
       - name: Test
         run: swift test
