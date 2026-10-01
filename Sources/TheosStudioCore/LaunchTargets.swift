@@ -55,7 +55,10 @@ public enum LaunchTargets {
         var targets: [LaunchTarget] = []
         var seen = Set<String>()
 
-        if let value = ProjectManifest.assignmentValue(in: makefile, name: "INSTALL_TARGET_PROCESSES") {
+        // Read it the way a Makefile is read — line by line, following the
+        // continuations — rather than by asking a one-line helper about a whole
+        // file, which finds the first "=" anywhere in it and gives up.
+        if let value = MakefileEditor.readValue("INSTALL_TARGET_PROCESSES", in: makefile) {
             for name in value.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init) where !name.isEmpty {
                 // A process name is case sensitive to killall, so it is kept as
                 // written rather than normalised.

@@ -23,7 +23,9 @@ public struct Snippet: Equatable, Sendable, Identifiable {
         self.summary = summary
         self.language = language
         self.suggestedFileName = suggestedFileName
-        self.body = body
+        // Swift drops the line break in front of a multi-line string's closing
+        // delimiter, and a snippet that does not end with one pastes badly.
+        self.body = body.hasSuffix("\n") ? body : body + "\n"
     }
 }
 
