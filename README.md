@@ -76,12 +76,64 @@ This repository contains:
   them, builds, and reads the compiler's answer, stopping for your approval before
   anything is written. Bring your own model (any OpenAI-compatible endpoint); the
   key stays in the keychain.
+- **Plugins** — extensible built-in and external project/device tools with command actions and editor snippets.
 - **Installing Theos** — the official installer's on-device path, split along the
   line that decides whether it works: cloning Theos and unpacking a patched SDK is
   copying files into a folder and needs no root at all, while the dependency
   packages (`clang`, `ldid`, `git`, `perl`, …) come from the package manager and
   do. When there is no way to become root the app installs the first part and
   tells you exactly what to run for the second, instead of failing at both.
+
+## Plugins
+
+The Plugin Center is deliberately declarative. A plugin is a JSON manifest in
+`~/Documents/TheosStudio/Plugins` (or imported from Files) that describes one or
+more commands. The first element is the executable and every remaining element is
+an argument; TheosStudio does **not** join the array into a shell command.
+
+```json
+{
+  "id": "example.project-tools",
+  "name": "Example Project Tools",
+  "version": "1.0.0",
+  "summary": "A small project-aware plugin.",
+  "systemImage": "wrench.and.screwdriver",
+  "scopes": ["project"],
+  "actions": [
+    {
+      "id": "git-log",
+      "title": "Recent commits",
+      "command": ["git", "-C", "{{project}}", "log", "-5", "--oneline"],
+      "requiresProject": true
+    }
+  ],
+  "snippets": [
+    {
+      "id": "debug-log",
+      "title": "Debug log",
+      "language": "code",
+      "suggestedFileName": "Tweak.x",
+      "body": "NSLog(@\"[MyTweak] reached hook\");"
+    }
+  ]
+}
+```
+
+Available tokens are `{{project}}`, `{{projectName}}`, `{{identifier}}`,
+`{{scheme}}`, `{{package}}`, `{{theos}}`, `{{home}}` and `{{plugin}}`.
+An action can also declare `requiresPackage: true` and `destructive: true`. Package actions are disabled until the selected project has
+a built `.deb`; destructive actions open their console but wait for an explicit
+Run tap.
+
+Plugins can also contribute editor snippets. Enabled plugin snippets appear beside
+the built-in Logos/Theos snippets in the editor; their `language` may be
+`code`, `makefile`, `controlFile`, `plist` or `plainText`.
+
+A plugin can also be a directory containing `plugin.json`. In that form a
+relative executable such as `./bin/lint` is resolved inside the plugin directory,
+which makes it possible to ship a manifest together with helper scripts or
+binaries installed by a jailbreak package.
+
 
 ## Why it drives Theos instead of shipping a toolchain
 

@@ -103,6 +103,10 @@ enum Paths {
     static var defaultProjectsDirectory: String {
         documents + "/Projects"
     }
+
+    static var defaultPluginsDirectory: String {
+        documents + "/TheosStudio/Plugins"
+    }
 }
 
 extension UIApplication {

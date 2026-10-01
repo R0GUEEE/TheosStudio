@@ -9,6 +9,7 @@ import TheosStudioCore
 /// back button was tapped is the kind of bug that ends a session.
 struct CodeEditorView: View {
 
+    @EnvironmentObject private var plugins: PluginManager
     let path: String
     let fontSize: CGFloat
     var scrollToLine: Int?
@@ -55,9 +56,16 @@ struct CodeEditorView: View {
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
-                    Section("Append a snippet") {
+                    Section("Built-in snippets") {
                         ForEach(SnippetLibrary.all) { snippet in
                             Button(snippet.title) { append(snippet) }
+                        }
+                    }
+                    if !plugins.contributedSnippets.isEmpty {
+                        Section("Plugin snippets") {
+                            ForEach(plugins.contributedSnippets) { snippet in
+                                Button(snippet.title) { append(snippet) }
+                            }
                         }
                     }
                 } label: {
