@@ -38,11 +38,20 @@ struct ToolchainView: View {
             .navigationTitle("Toolchain")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        store.refreshToolchain()
-                        store.probePrivileges(force: true)
+                    Menu {
+                        Button {
+                            store.refreshToolchain()
+                            store.probePrivileges(force: true)
+                        } label: {
+                            Label("Rescan", systemImage: "arrow.clockwise")
+                        }
+                        Button {
+                            UIPasteboard.general.string = environmentReport
+                        } label: {
+                            Label("Copy environment report", systemImage: "doc.on.doc")
+                        }
                     } label: {
-                        Label("Rescan", systemImage: "arrow.clockwise")
+                        Label("Toolchain options", systemImage: "ellipsis.circle")
                     }
                 }
             }
@@ -269,6 +278,35 @@ struct ToolchainView: View {
                 Text(readOnlyFooter)
             }
         }
+    }
+
+    /// A paste-able summary of everything this screen knows. When a device
+    /// behaves differently from what the app expects, this is the whole answer:
+    /// which jailbreak, which privileges, which tools, which Theos.
+    private var environmentReport: String {
+        var lines: [String] = ["TheosStudio \(SettingsView.appVersion)"]
+        lines.append("jailbreak: \(store.jailbreak.rootlessPrefix == nil ? "rootful" : "rootless at " + (store.jailbreak.rootlessPrefix ?? ""))")
+        lines.append("privileges: \(store.privileges.summary)")
+        lines.append("procursus: \(store.isProcursus)")
+        lines.append("home: \(NSHomeDirectory())")
+        if let report = store.toolchain {
+            lines.append("theos: \(report.theosRoot ?? "not found")")
+            lines.append("sdks: \(report.sdkDirectories.isEmpty ? "none" : report.sdkDirectories.joined(separator: ", "))")
+            lines.append("path: \(report.binDirectories.joined(separator: ":"))")
+            for status in report.statuses {
+                lines.append("\(status.isInstalled ? "ok" : "MISSING") \(status.tool.name): \(status.path ?? "-")")
+            }
+            if !report.notes.isEmpty {
+                lines.append("notes:")
+                for note in report.notes { lines.append("  - \(note)") }
+            }
+            if !report.installCommand.isEmpty {
+                lines.append("fix: \(report.installCommand)")
+            }
+        } else {
+            lines.append("theos: not scanned yet")
+        }
+        return lines.joined(separator: "\n")
     }
 
     private var readOnlyFooter: String {
