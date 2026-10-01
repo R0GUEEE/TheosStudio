@@ -124,9 +124,9 @@ an argument; TheosStudio does **not** join the array into a shell command.
 }
 ```
 
-Available tokens are `{{project}}`, `{{package}}`, `{{theos}}`, `{{home}}`
-and `{{plugin}}`. An action can also declare `requiresPackage: true` and
-`destructive: true`. Package actions are disabled until the selected project has
+Available tokens are `{{project}}`, `{{projectName}}`, `{{identifier}}`,
+`{{scheme}}`, `{{package}}`, `{{theos}}`, `{{home}}` and `{{plugin}}`.
+An action can also declare `requiresPackage: true` and `destructive: true`. Package actions are disabled until the selected project has
 a built `.deb`; destructive actions open their console but wait for an explicit
 Run tap.
 
