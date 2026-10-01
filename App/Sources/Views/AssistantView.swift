@@ -203,7 +203,7 @@ struct AssistantView: View {
             case .failed(let message):
                 Text(message).font(.caption).foregroundColor(.red)
             case .idle:
-                Text("Reads are free. Every edit, build and install stops here for approval.")
+                Text("Reads are free. Edits, builds, installs, plugin runs and restarts follow your approval policy.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -279,11 +279,14 @@ struct AssistantView: View {
     }
 
     private static let prompts = [
+        "Audit this project with health checks, metrics, package state and git status.",
         "Build the project and fix what fails.",
+        "Inspect the built package and verify its rootless/rootful layout.",
+        "Check launch targets and help me test this tweak with the smallest restart.",
+        "Review the enabled plugins and use one if it helps diagnose this project.",
         "Review Tweak.x and tell me what could go wrong on this iOS version.",
         "Add a switch to the preference bundle that disables the tweak.",
         "Make the injection filter narrower and explain the change.",
-        "Explain what this tweak does, in one paragraph.",
     ]
 
     // MARK: - Wiring
