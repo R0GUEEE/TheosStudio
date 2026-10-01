@@ -299,14 +299,14 @@ final class PluginActionRunner: ObservableObject {
     func run(plugin: InstalledPlugin, action: PluginAction, project: Project?, store: StudioStore) {
         guard phase != .running else { return }
         lines = []
-            let context = PluginInvocationContext(
-                projectPath: project?.path,
-                packagePath: project?.builtPackage,
-                theosPath: store.toolchain?.theosRoot,
-                homePath: NSHomeDirectory(),
-                pluginPath: plugin.source.rootPath
-            )
-            guard let command = PluginTokenExpander.expand(action.command, context: context), !command.isEmpty else {
+        let context = PluginInvocationContext(
+            projectPath: project?.path,
+            packagePath: project?.builtPackage,
+            theosPath: store.toolchain?.theosRoot,
+            homePath: NSHomeDirectory(),
+            pluginPath: plugin.source.rootPath
+        )
+        guard let command = PluginTokenExpander.expand(action.command, context: context), !command.isEmpty else {
                 phase = .failed("This action needs project, package, Theos or plugin context that is not available.")
                 return
             }
