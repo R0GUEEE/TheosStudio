@@ -67,18 +67,24 @@ final class PluginTests: XCTestCase {
     func testTokenExpansionUsesInvocationContext() {
         let context = PluginInvocationContext(
             projectPath: "/var/mobile/Projects/Demo",
+            projectName: "Demo",
+            packageIdentifier: "com.example.demo",
+            packagingScheme: "rootless",
             packagePath: "/var/mobile/Projects/Demo/packages/demo.deb",
             theosPath: "/var/jb/var/theos",
             homePath: "/var/mobile",
             pluginPath: "/var/mobile/Documents/Plugins/example"
         )
         let command = PluginTokenExpander.expand(
-            ["tool", "{{project}}", "{{package}}", "{{theos}}", "{{home}}", "{{plugin}}"],
+            ["tool", "{{project}}", "{{projectName}}", "{{identifier}}", "{{scheme}}", "{{package}}", "{{theos}}", "{{home}}", "{{plugin}}"],
             context: context
         )
         XCTAssertEqual(command, [
             "tool",
             "/var/mobile/Projects/Demo",
+            "Demo",
+            "com.example.demo",
+            "rootless",
             "/var/mobile/Projects/Demo/packages/demo.deb",
             "/var/jb/var/theos",
             "/var/mobile",
