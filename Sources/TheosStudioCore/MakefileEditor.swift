@@ -154,8 +154,19 @@ public enum MakefileEditor {
                 }
                 var valueEnd = lineEnd
                 // Follow the continuations so the whole list is one range.
+                //
+                // The search starts *after* the newline we are standing on: starting
+                // at it finds the same newline again, valueEnd never moves, and the
+                // loop runs forever. A wrapped file list — which is what Theos' own
+                // templates produce once the list is long enough — is enough to hit
+                // it, and a hang in a pure string function is not obvious from the
+                // outside.
                 while valueEnd > valueStart, makefile[makefile.index(before: valueEnd)] == "\\" {
-                    guard let nextLine = makefile.range(of: "\n", range: valueEnd..<makefile.endIndex) else { break }
+                    guard valueEnd < makefile.endIndex,
+                          let nextLine = makefile.range(of: "\n", range: makefile.index(after: valueEnd)..<makefile.endIndex) else {
+                        valueEnd = makefile.endIndex
+                        break
+                    }
                     valueEnd = nextLine.lowerBound
                 }
                 return valueStart..<valueEnd
