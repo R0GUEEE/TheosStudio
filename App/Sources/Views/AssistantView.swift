@@ -374,7 +374,7 @@ struct AssistantView: View {
             projectHealth: { projectHealthText(project: project) },
             projectStats: { projectStatsText(project: project) },
             launchTargets: { launchTargetsText(project: project) },
-            inspectPackage: { packageInspectionText(project: project) },
+            inspectPackage: { await packageInspectionText(project: project) },
             installedPackages: { query in installedPackagesText(query: query) },
             plugins: { pluginsText(project: project) },
             runPlugin: { pluginID, actionID in
@@ -477,7 +477,7 @@ struct AssistantView: View {
         }.joined(separator: "\n")
     }
 
-    private func packageInspectionText(project: Project) -> String {
+    private func packageInspectionText(project: Project) async -> String {
         guard let artifact = ArtifactLocator.newestPackage(
             in: project.path,
             listDirectory: FS.list,
@@ -486,9 +486,10 @@ struct AssistantView: View {
         guard let dpkgDeb = store.toolPaths(for: ["dpkg-deb"])["dpkg-deb"] else {
             return "dpkg-deb is not installed, so the package cannot be inspected."
         }
-        let info = runSyncTool(dpkgDeb, ["--info", artifact])
-        let contents = runSyncTool(dpkgDeb, ["--contents", artifact])
-        let entries = DebListing.parse(contents)
+        let info = await runTool(dpkgDeb, ["--info", artifact])
+        let contents = await runTool(dpkgDeb, ["--contents", artifact])
+        let rawContents = contents.components(separatedBy: "\n").dropFirst().joined(separator: "\n")
+        let entries = DebListing.parse(rawContents)
         var lines = ["Package: \((artifact as NSString).lastPathComponent)"]
         lines.append(contentsOf: DebListing.summary(entries: entries, control: ControlFile.parse(FS.read(project.path + "/control") ?? ""), scheme: project.scheme).map { "\($0.label): \($0.value)" })
         let paths = DebListing.files(entries).prefix(40).map(\.installedPath)
@@ -497,22 +498,6 @@ struct AssistantView: View {
             lines.append("dpkg-deb info:\n" + String(info.prefix(4000)))
         }
         return lines.joined(separator: "\n")
-    }
-
-    private func runSyncTool(_ executable: String, _ arguments: [String]) -> String {
-        let semaphore = DispatchSemaphore(value: 0)
-        var result = ""
-        let process = ShellProcess(executable: executable, arguments: arguments, environment: store.commandEnvironment())
-        do {
-            try process.run(onLine: { line in result += line + "\n" }, onExit: { outcome in
-                if result.isEmpty { result = outcome.output }
-                semaphore.signal()
-            })
-            _ = semaphore.wait(timeout: .now() + 8)
-        } catch {
-            return "Error: \(error.localizedDescription)"
-        }
-        return result
     }
 
     private func runPlugin(pluginID: String, actionID: String, project: Project) async -> String {
