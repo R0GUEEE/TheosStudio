@@ -122,24 +122,22 @@ struct StudioActionButton: View {
     var prominent = false
     let action: () -> Void
 
+    @ViewBuilder
     var body: some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
+        if prominent {
+            Button(action: action) {
+                Label(title, systemImage: systemImage)
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+        } else {
+            Button(action: action) {
+                Label(title, systemImage: systemImage)
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
         }
-        .buttonStyle(prominent ? AnyButtonStyle(.borderedProminent) : AnyButtonStyle(.bordered))
-    }
-}
-
-private struct AnyButtonStyle: ButtonStyle {
-    private let makeBodyClosure: (Configuration) -> AnyView
-
-    init<S: ButtonStyle>(_ style: S) {
-        makeBodyClosure = { AnyView($0.label.buttonStyle(style)) }
-    }
-
-    func makeBody(configuration: Configuration) -> some View {
-        makeBodyClosure(configuration)
     }
 }
