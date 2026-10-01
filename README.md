@@ -131,7 +131,7 @@ So the app asks for exactly one thing at a time, and never claims otherwise:
 | Action | Needs root | What the app does |
 | --- | --- | --- |
 | Edit, build, package a project | no | runs `make` itself |
-| Install Theos and an SDK into `~/Documents/Theos` | no | `git clone` + `curl` + `tar` |
+| Install Theos and an SDK into `~/Documents/Theos` | no | `git clone`, then the app downloads the SDK itself and unpacks it with `tar` |
 | Install `clang`, `ldid`, `git`, `perl`… | yes | `sudo -n apt-get install -y …` when passwordless sudo exists |
 | `dpkg -i` a built tweak | yes | `sudo -n dpkg -i …`, else hands the `.deb` to Sileo |
 | Respring | yes | `sudo -n sbreload`, else `sudo -n killall -9 SpringBoard` |

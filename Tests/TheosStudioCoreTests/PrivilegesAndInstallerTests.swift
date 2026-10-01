@@ -57,7 +57,12 @@ final class TheosInstallerTests: XCTestCase {
         return paths
     }
 
-    private let allTools = ["git", "curl", "tar", "mkdir", "apt-get"]
+    private let allTools = ["git", "curl", "tar", "mkdir", "apt-get", "xz"]
+
+    private func isDownload(_ step: InstallStep) -> Bool {
+        if case .download = step.kind { return true }
+        return false
+    }
 
     private let sdk = SDKAsset(
         name: "iPhoneOS16.5.sdk",
@@ -75,8 +80,7 @@ final class TheosInstallerTests: XCTestCase {
             toolPaths: tools(including: allTools),
             privileges: PrivilegeContext(mode: .root)
         )
-        XCTAssertEqual(plan.steps.count, 8)
-        XCTAssertEqual(plan.steps[0].tool, "apt-get")
+        XCTAssertEqual(plan.steps.prefix(2).map(\.tool), ["apt-get", "apt-get"])
         XCTAssertEqual(plan.steps[0].arguments, ["update"])
         XCTAssertTrue(plan.steps[0].requiresRoot)
         XCTAssertEqual(plan.steps[1].arguments, ["install", "-y", "theos-dependencies"])
@@ -108,7 +112,8 @@ final class TheosInstallerTests: XCTestCase {
         XCTAssertFalse(plan.steps.contains { $0.requiresRoot })
         XCTAssertFalse(plan.steps.contains { $0.tool == "apt-get" })
         XCTAssertTrue(plan.steps.contains { $0.tool == "git" && $0.arguments.first == "clone" })
-        XCTAssertTrue(plan.steps.contains { $0.tool == "curl" })
+        // The SDK download is done by the app, so it needs no tool at all.
+        XCTAssertTrue(plan.steps.contains { isDownload($0) })
         XCTAssertTrue(plan.steps.contains { $0.tool == "tar" })
         XCTAssertTrue(plan.warnings.contains { $0.contains("need root") }, "\(plan.warnings)")
         XCTAssertTrue(plan.warnings.contains { $0.contains("clang") })
@@ -143,17 +148,72 @@ final class TheosInstallerTests: XCTestCase {
             toolPaths: tools(including: allTools),
             privileges: PrivilegeContext(mode: .root)
         )
+        let sdk = destination + "/sdks/iPhoneOS16.5.sdk"
         XCTAssertEqual(plan.steps.first { $0.tool == "mkdir" }?.skipIfExists, destination)
         XCTAssertEqual(
             plan.steps.first { $0.tool == "git" && $0.arguments.first == "clone" }?.skipIfExists,
             destination + "/makefiles/common.mk"
         )
-        XCTAssertEqual(
-            plan.steps.first { $0.tool == "curl" }?.skipIfExists,
-            destination + "/sdks/iPhoneOS16.5.sdk"
-        )
+        XCTAssertEqual(plan.steps.first { isDownload($0) }?.skipIfExists, sdk)
+        XCTAssertEqual(plan.steps.first { $0.tool == "tar" }?.skipIfExists, sdk)
         // The submodule step is a repair, not a one-off: it never claims to be done.
         XCTAssertNil(plan.steps.first { $0.tool == "git" && $0.arguments.first == "-C" }?.skipIfExists)
+    }
+
+    /// The unpack is a ladder: try tar with xz support, and if this device's tar
+    /// does not have it, decompress first and unpack the result. Every rung is
+    /// skipped once the SDK is on disk, so the first one that works ends it.
+    func testTheUnpackLadderHasAFallbackWhenTheDeviceHasXZ() {
+        let destination = "/var/mobile/Documents/Theos"
+        let plan = TheosInstaller.plan(
+            options: options(destination: destination),
+            toolPaths: tools(including: allTools),
+            privileges: PrivilegeContext(mode: .root)
+        )
+        let sdk = destination + "/sdks/iPhoneOS16.5.sdk"
+        let archive = destination + "/sdks/.iPhoneOS16.5.sdk.tar.xz"
+
+        let unpackSteps = plan.steps.filter { $0.tool == "tar" || $0.tool == "xz" }
+        XCTAssertEqual(unpackSteps.count, 3)
+        XCTAssertEqual(unpackSteps[0].arguments, ["-xJf", archive, "-C", destination + "/sdks"])
+        XCTAssertTrue(unpackSteps[0].tolerateFailure, "the first attempt must not end the installation")
+        XCTAssertEqual(unpackSteps[1].tool, "xz")
+        XCTAssertEqual(unpackSteps[1].arguments, ["-d", archive])
+        XCTAssertEqual(unpackSteps[2].arguments, ["-xf", destination + "/sdks/.iPhoneOS16.5.sdk.tar", "-C", destination + "/sdks"])
+        XCTAssertFalse(unpackSteps[2].tolerateFailure, "if even this fails, the installation failed")
+        for step in unpackSteps {
+            XCTAssertEqual(step.skipIfExists, sdk)
+        }
+        XCTAssertFalse(plan.warnings.contains { $0.contains("xz") }, "\(plan.warnings)")
+    }
+
+    func testWithoutXZTheFallbackIsOmittedAndReported() {
+        let plan = TheosInstaller.plan(
+            options: options(),
+            toolPaths: tools(including: ["git", "tar", "mkdir", "apt-get"]),
+            privileges: PrivilegeContext(mode: .root)
+        )
+        XCTAssertEqual(plan.steps.filter { $0.tool == "tar" }.count, 1)
+        XCTAssertFalse(plan.steps.contains { $0.tool == "xz" })
+        XCTAssertTrue(plan.warnings.contains { $0.contains("xz is not installed") }, "\(plan.warnings)")
+    }
+
+    func testDownloadStepsAreNotCommands() {
+        let plan = TheosInstaller.plan(
+            options: options(),
+            toolPaths: tools(including: allTools),
+            privileges: PrivilegeContext(mode: .root)
+        )
+        guard let download = plan.steps.first(where: isDownload) else {
+            return XCTFail("expected a download step")
+        }
+        XCTAssertNil(download.tool)
+        if case .download(let url, let to) = download.kind {
+            XCTAssertEqual(url, "https://example.invalid/iPhoneOS16.5.sdk.tar.xz")
+            XCTAssertTrue(to.hasSuffix(".iPhoneOS16.5.sdk.tar.xz"))
+        } else {
+            XCTFail("expected .download")
+        }
     }
 
     func testNoSDKSelectedIsWarnedAbout() {
@@ -164,7 +224,7 @@ final class TheosInstallerTests: XCTestCase {
             toolPaths: tools(including: allTools),
             privileges: PrivilegeContext(mode: .root)
         )
-        XCTAssertFalse(plan.steps.contains { $0.tool == "curl" })
+        XCTAssertFalse(plan.steps.contains { isDownload($0) })
         XCTAssertTrue(plan.warnings.contains { $0.contains("SDK") && $0.contains("cannot compile") })
     }
 

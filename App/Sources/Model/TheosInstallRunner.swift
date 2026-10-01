@@ -60,9 +60,8 @@ final class TheosInstallRunner: ObservableObject {
         self.completedSteps = 0
         self.totalSteps = 0
         self.queue = []
-        store.settings.theosPathOverride = destination
 
-        let needed = ["git", "curl", "tar", "mkdir", "apt-get"]
+        let needed = ["git", "tar", "xz", "mkdir", "apt-get"]
         toolPaths = store.toolPaths(for: needed)
 
         append("$ destination: \(destination)")
@@ -115,7 +114,10 @@ final class TheosInstallRunner: ObservableObject {
             fail("Nothing can be installed: \(plan.warnings.first ?? "the plan is empty")")
             return
         }
-        append("\(totalSteps) steps planned.")
+        append("\(totalSteps) steps planned:")
+        for (index, step) in plan.steps.enumerated() {
+            append("  \(index + 1). \(step.label)")
+        }
         runNext()
     }
 
@@ -142,46 +144,90 @@ final class TheosInstallRunner: ObservableObject {
             return
         }
 
-        guard let tool = toolPaths[step.tool] else {
-            fail("\(step.tool) is not installed, so “\(step.label)” cannot run.")
-            return
-        }
-
-        let (executable, arguments) = step.requiresRoot
-            ? privileges.wrapped(tool, step.arguments)
-            : (tool, step.arguments)
-
-        phase = .working(step.label)
-        append("→ \(step.label): \(pretty(executable, arguments))")
         if let note = step.note {
             append("  \(note)")
         }
 
-        let process = ShellProcess(
-            executable: executable,
-            arguments: arguments,
-            environment: ProcessInfo.processInfo.environment
-        )
-        self.process = process
+        switch step.kind {
+        case .download(let url, let destination):
+            phase = .working(step.label)
+            append("↓ \(step.label)")
+            Task { await self.download(url, to: destination, step: step) }
+
+        case .command(let tool, let arguments):
+            guard let path = toolPaths[tool] else {
+                fail("\(tool) is not installed, so “\(step.label)” cannot run.")
+                return
+            }
+            let (executable, finalArguments) = step.requiresRoot
+                ? privileges.wrapped(path, arguments)
+                : (path, arguments)
+
+            phase = .working(step.label)
+            append("→ \(step.label): \(pretty(executable, finalArguments))")
+
+            let process = ShellProcess(
+                executable: executable,
+                arguments: finalArguments,
+                environment: ProcessInfo.processInfo.environment
+            )
+            self.process = process
+            do {
+                try process.run(onLine: { [weak self] line in
+                    self?.append(line)
+                }, onExit: { [weak self] outcome in
+                    guard let self else { return }
+                    self.process = nil
+                    if outcome.status == 0 {
+                        self.completedSteps += 1
+                        self.runNext()
+                    } else if step.tolerateFailure {
+                        // A rung of a fallback ladder: the next step is the retry.
+                        self.append("  that did not work — trying the next step")
+                        self.completedSteps += 1
+                        self.runNext()
+                    } else {
+                        self.fail(self.failureMessage(for: step, outcome: outcome))
+                    }
+                })
+            } catch {
+                fail(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Downloads a file with the app's own networking.
+    ///
+    /// This is what makes installing an SDK possible on a device with no `curl`:
+    /// the app has a URLSession, so the only thing the plan needs from the device
+    /// is `tar`.
+    private func download(_ url: String, to destination: String, step: InstallStep) async {
+        guard let remote = URL(string: url) else {
+            fail("The SDK URL is not usable: \(url)")
+            return
+        }
         do {
-            try process.run(onLine: { [weak self] line in
-                self?.append(line)
-            }, onExit: { [weak self] outcome in
-                guard let self else { return }
-                self.process = nil
-                if outcome.status == 0 {
-                    self.completedSteps += 1
-                    self.runNext()
-                } else {
-                    self.fail(self.failureMessage(for: step, outcome: outcome))
-                }
-            })
+            let (temporary, response) = try await URLSession.shared.download(from: remote)
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                fail("The download failed with HTTP \(http.statusCode).")
+                return
+            }
+            let size = (try? FileManager.default.attributesOfItem(atPath: temporary.path)[.size] as? NSNumber)??.intValue ?? 0
+            try? FileManager.default.removeItem(atPath: destination)
+            try FileManager.default.moveItem(atPath: temporary.path, toPath: destination)
+            append("  downloaded \(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))")
+            completedSteps += 1
+            runNext()
         } catch {
-            fail(error.localizedDescription)
+            fail("Could not download \(step.label): \(error.localizedDescription)")
         }
     }
 
     private func finish() {
+        // Only now is this the Theos to use. Pointing at the destination before
+        // the install ran leaves the app looking at a folder that may hold
+        // nothing, which is exactly how "Theos found but no SDK" happens.
+        store?.settings.theosPathOverride = destination
         store?.refreshToolchain()
         phase = .finished("Theos installed in \(destination).")
         append("Done. Theos is now used from \(destination).")
@@ -196,7 +242,10 @@ final class TheosInstallRunner: ObservableObject {
             .last { !$0.isEmpty } ?? "no output"
         var message = "\(step.label) failed (exit \(outcome.status)): \(tail)"
         if step.requiresRoot && !privileges.canEscalate {
-            message += "\n\n" + privileges.remedy(for: pretty(toolPaths[step.tool] ?? step.tool, step.arguments))
+            // A download has no tool to name, so fall back to the step's label.
+            let tool = step.tool ?? step.label
+            let command = pretty(toolPaths[step.tool ?? ""] ?? tool, step.arguments)
+            message += "\n\n" + privileges.remedy(for: command)
         }
         return message
     }

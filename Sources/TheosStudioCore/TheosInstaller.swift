@@ -13,32 +13,55 @@ public struct SDKAsset: Equatable, Sendable {
     }
 }
 
-/// One command in an installation.
+/// What a step does.
+public enum InstallStepKind: Equatable, Sendable {
+    /// Run a tool that is already on the device.
+    case command(tool: String, arguments: [String])
+    /// Fetch a file. Done by the app itself rather than by `curl`, because a
+    /// device without curl can still download an SDK, and because the app can
+    /// report progress on it.
+    case download(url: String, to: String)
+}
+
+/// One step in an installation.
 public struct InstallStep: Equatable, Sendable {
     public var label: String
-    /// Logical tool name (`git`, `curl`, `tar`, `mkdir`, `apt-get`); the app
-    /// resolves it to a path and reports it when it is missing.
-    public var tool: String
-    public var arguments: [String]
+    public var kind: InstallStepKind
     public var requiresRoot: Bool
     /// When this path exists the step is already done.
     public var skipIfExists: String?
+    /// A step that may fail without failing the installation: the next step is
+    /// its fallback. This is how "unpack with tar, and if this tar has no xz
+    /// support, decompress first" is expressed as a plan.
+    public var tolerateFailure: Bool
     public var note: String?
 
     public init(
         label: String,
-        tool: String,
-        arguments: [String],
+        kind: InstallStepKind,
         requiresRoot: Bool = false,
         skipIfExists: String? = nil,
+        tolerateFailure: Bool = false,
         note: String? = nil
     ) {
         self.label = label
-        self.tool = tool
-        self.arguments = arguments
+        self.kind = kind
         self.requiresRoot = requiresRoot
         self.skipIfExists = skipIfExists
+        self.tolerateFailure = tolerateFailure
         self.note = note
+    }
+
+    /// The tool this step runs, for the app to resolve to a path. `nil` for a
+    /// download, which needs no tool at all.
+    public var tool: String? {
+        if case .command(let tool, _) = kind { return tool }
+        return nil
+    }
+
+    public var arguments: [String] {
+        if case .command(_, let arguments) = kind { return arguments }
+        return []
     }
 }
 
@@ -139,15 +162,13 @@ public enum TheosInstaller {
                         : dependencyPackages
                     steps.append(InstallStep(
                         label: "Updating package lists",
-                        tool: "apt-get",
-                        arguments: ["update"],
+                        kind: .command(tool: "apt-get", arguments: ["update"]),
                         requiresRoot: true,
                         note: "Failure here is not fatal: some repositories are unreachable and apt-get says so."
                     ))
                     steps.append(InstallStep(
                         label: "Installing \(packages.joined(separator: ", "))",
-                        tool: "apt-get",
-                        arguments: ["install", "-y"] + packages,
+                        kind: .command(tool: "apt-get", arguments: ["install", "-y"] + packages),
                         requiresRoot: true,
                         note: "This is the part that needs root."
                     ))
@@ -168,8 +189,7 @@ public enum TheosInstaller {
         if require("mkdir", because: "the Theos directory") {
             steps.append(InstallStep(
                 label: "Create \(destination)",
-                tool: "mkdir",
-                arguments: ["-p", destination],
+                kind: .command(tool: "mkdir", arguments: ["-p", destination]),
                 skipIfExists: destination
             ))
         }
@@ -177,15 +197,13 @@ public enum TheosInstaller {
         if cloned {
             steps.append(InstallStep(
                 label: "Clone Theos",
-                tool: "git",
-                arguments: ["clone", "--recursive", repository, destination],
+                kind: .command(tool: "git", arguments: ["clone", "--recursive", repository, destination]),
                 skipIfExists: theosMakefiles,
                 note: "The submodules are the Logos preprocessor, the headers and the templates — without them nothing builds."
             ))
             steps.append(InstallStep(
                 label: "Update Theos submodules",
-                tool: "git",
-                arguments: ["-C", destination, "submodule", "update", "--init", "--recursive"],
+                kind: .command(tool: "git", arguments: ["-C", destination, "submodule", "update", "--init", "--recursive"]),
                 note: "A no-op after a fresh clone; it repairs a clone that was interrupted."
             ))
         }
@@ -195,29 +213,50 @@ public enum TheosInstaller {
                 let sdkDirectory = destination + "/sdks"
                 let archive = sdkDirectory + "/." + asset.name + ".tar.xz"
                 let installed = sdkDirectory + "/" + asset.name
+
                 if require("mkdir", because: "the SDK directory") {
                     steps.append(InstallStep(
                         label: "Create \(sdkDirectory)",
-                        tool: "mkdir",
-                        arguments: ["-p", sdkDirectory],
+                        kind: .command(tool: "mkdir", arguments: ["-p", sdkDirectory]),
                         skipIfExists: sdkDirectory
                     ))
                 }
-                if require("curl", because: "the SDK download") {
-                    steps.append(InstallStep(
-                        label: "Download \(asset.name) (\(asset.version))",
-                        tool: "curl",
-                        arguments: ["-L", "-o", archive, asset.url],
-                        skipIfExists: installed
-                    ))
-                }
+
+                // The download needs no tool: the app fetches it.
+                steps.append(InstallStep(
+                    label: "Download \(asset.name) (\(asset.version))",
+                    kind: .download(url: asset.url, to: archive),
+                    skipIfExists: installed,
+                    note: "A patched SDK from theos/sdks, the same release the official installer uses."
+                ))
+
                 if require("tar", because: "unpacking the SDK") {
                     steps.append(InstallStep(
                         label: "Unpack \(asset.name)",
-                        tool: "tar",
-                        arguments: ["-xJf", archive, "-C", sdkDirectory],
-                        skipIfExists: installed
+                        kind: .command(tool: "tar", arguments: ["-xJf", archive, "-C", sdkDirectory]),
+                        skipIfExists: installed,
+                        tolerateFailure: true,
+                        note: "If this tar was built without xz support the next step decompresses first."
                     ))
+                    // The fallback ladder: each step is skipped once the SDK is in
+                    // place, so the first one that works ends the sequence.
+                    if toolPaths["xz"] != nil {
+                        let decompressed = sdkDirectory + "/." + asset.name + ".tar"
+                        steps.append(InstallStep(
+                            label: "Decompress \(asset.name)",
+                            kind: .command(tool: "xz", arguments: ["-d", archive]),
+                            skipIfExists: installed,
+                            tolerateFailure: true
+                        ))
+                        steps.append(InstallStep(
+                            label: "Unpack \(asset.name) (after decompression)",
+                            kind: .command(tool: "tar", arguments: ["-xf", decompressed, "-C", sdkDirectory]),
+                            skipIfExists: installed,
+                            note: "The device's tar has no xz support, so xz did it."
+                        ))
+                    } else {
+                        warnings.append("xz is not installed, so if this device's tar was built without xz support the SDK cannot be unpacked. Installing xz-utils fixes that.")
+                    }
                 }
             } else {
                 warnings.append("No SDK was selected, so Theos would be installed without one — and Theos cannot compile anything without an SDK in $THEOS/sdks.")
