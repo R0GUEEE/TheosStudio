@@ -111,6 +111,15 @@ an argument; TheosStudio does **not** join the array into a shell command.
       "command": ["git", "-C", "{{project}}", "log", "-5", "--oneline"],
       "requiresProject": true
     }
+  ],
+  "snippets": [
+    {
+      "id": "debug-log",
+      "title": "Debug log",
+      "language": "code",
+      "suggestedFileName": "Tweak.x",
+      "body": "NSLog(@\"[MyTweak] reached hook\");"
+    }
   ]
 }
 ```
@@ -120,6 +129,10 @@ and `{{plugin}}`. An action can also declare `requiresPackage: true` and
 `destructive: true`. Package actions are disabled until the selected project has
 a built `.deb`; destructive actions open their console but wait for an explicit
 Run tap.
+
+Plugins can also contribute editor snippets. Enabled plugin snippets appear beside
+the built-in Logos/Theos snippets in the editor; their `language` may be
+`code`, `makefile`, `controlFile`, `plist` or `plainText`.
 
 A plugin can also be a directory containing `plugin.json`. In that form a
 relative executable such as `./bin/lint` is resolved inside the plugin directory,
