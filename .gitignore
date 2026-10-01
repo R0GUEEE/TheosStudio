@@ -1,0 +1,18 @@
+# SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+App/build/
+
+# Packaging output
+dist/
+packages/
+.theos/
+
+# macOS
+.DS_Store
