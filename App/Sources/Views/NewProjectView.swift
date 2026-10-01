@@ -192,7 +192,7 @@ struct NewProjectView: View {
                     Button("Cancel") { isPresented = false }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Create", action: create).bold()
+                    Button("Create", action: create).font(.body.weight(.semibold))
                 }
             }
         }

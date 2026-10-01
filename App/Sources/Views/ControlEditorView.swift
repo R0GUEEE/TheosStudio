@@ -34,7 +34,9 @@ struct ControlEditorView: View {
     }
 
     private var otherFields: [ControlField] {
-        control.fields.filter { !knownFields.contains { $0.caseInsensitiveCompare($1.key) == .orderedSame } }
+        control.fields.filter { field in
+            !knownFields.contains { $0.caseInsensitiveCompare(field.key) == .orderedSame }
+        }
     }
 
     var body: some View {

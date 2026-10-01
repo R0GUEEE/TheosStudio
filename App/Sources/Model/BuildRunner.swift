@@ -169,7 +169,7 @@ final class BuildRunner: ObservableObject {
         }
 
         diagnostics = DiagnosticParser.diagnostics(in: lines.map(\.text))
-        let reported = DiagnosticParser.packagedFile(in: lines)
+        let reported = DiagnosticParser.packagedFile(in: lines.map(\.text))
         let found = ArtifactLocator.newestPackage(
             in: projectPath,
             listDirectory: FS.list,
@@ -190,7 +190,7 @@ final class BuildRunner: ObservableObject {
             phase = .succeeded
             if let found { onSucceeded?(found) }
         } else {
-            let reason = DiagnosticParser.fatalLine(in: lines) ?? "exit status \(status)"
+            let reason = DiagnosticParser.fatalLine(in: lines.map(\.text)) ?? "exit status \(status)"
             append(.init(kind: .notice, text: "Failed: \(reason)"))
             phase = .failed(status)
         }
