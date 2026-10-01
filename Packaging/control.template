@@ -1,0 +1,22 @@
+Package: com.r0gueee.theosstudio
+Name: TheosStudio
+Version: @VERSION@
+Architecture: @ARCH@
+Section: Development
+Priority: optional
+Maintainer: r0gueee <r0gueee@users.noreply.github.com>
+Depends: firmware (>= 15.0)
+Recommends: theos
+Description: Build Theos tweaks on the device
+ Projects, a Logos editor, and a build, package and install pipeline driven by
+ the Theos the device already has.
+ .
+ TheosStudio does not ship a compiler: it runs the make, clang, ldid and
+ dpkg-deb that the jailbreak already has, shows their output, lifts the
+ compiler's errors and warnings out of the log, and installs the .deb the build
+ produces. The Toolchain tab names anything that is missing and the command that
+ installs it.
+ .
+ Packages install to /var/jb/Applications on a rootless jailbreak and to
+ /Applications on a rootful one.
+Homepage: https://github.com/R0GUEEE/TheosStudio

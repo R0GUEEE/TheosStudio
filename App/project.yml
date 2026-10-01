@@ -1,0 +1,93 @@
+# XcodeGen spec for the TheosStudio app.
+#
+# The app is a thin SwiftUI shell over the SwiftPM package at the repository root
+# (`../Package.swift`, library product `TheosStudioCore`), which is where all the
+# logic that can be tested lives.
+#
+# Generate the project and build it (unsigned) the way CI does:
+#
+#   xcodegen generate --spec App/project.yml --project App
+#   xcodebuild -project App/TheosStudio.xcodeproj -scheme TheosStudio \
+#              -configuration Release -sdk iphoneos \
+#              -derivedDataPath build \
+#              CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+#              build
+#
+# Signing is deliberately switched off: the entitlements a build tool needs
+# cannot be granted by an Apple signing identity, so the bundle is signed on the
+# device by `ldid` in Packaging/build-deb.sh instead.
+name: TheosStudio
+
+options:
+  bundleIdPrefix: com.r0gueee
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+  groupSortPosition: top
+  # Written explicitly so CI (Xcode 15 on macos-14) and a local Xcode agree about
+  # the project file. XcodeGen's own default (77) is unreadable by older Xcode.
+  xcodeVersion: "15.0"
+  objectVersion: 56
+
+packages:
+  TheosStudio:
+    path: ..
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+    # 1 = iPhone, 2 = iPad: a tweak is easier to write on a big screen, and the
+    # editor was built for a keyboard on a phone.
+    TARGETED_DEVICE_FAMILY: "1,2"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    ALWAYS_SEARCH_USER_PATHS: NO
+    CLANG_ENABLE_MODULES: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGNING_REQUIRED: NO
+    CODE_SIGN_IDENTITY: ""
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  TheosStudio:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      # Only the Swift sources. Resources/Info.plist and TheosStudio.entitlements
+      # are consumed through build settings, not copied into the bundle.
+      - path: Sources
+    dependencies:
+      - package: TheosStudio
+        product: TheosStudioCore
+    settings:
+      base:
+        PRODUCT_NAME: TheosStudio
+        PRODUCT_BUNDLE_IDENTIFIER: com.r0gueee.theosstudio
+        INFOPLIST_FILE: Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: TheosStudio.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/Frameworks"
+        SWIFT_EMIT_LOC_STRINGS: NO
+        ENABLE_ONLY_ACTIVE_ARCH: NO
+
+schemes:
+  TheosStudio:
+    build:
+      targets:
+        TheosStudio: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

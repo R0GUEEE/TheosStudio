@@ -1,0 +1,89 @@
+name: Engine
+
+# The engine is pure Swift with no Xcode project and no Apple-only framework, so
+# this is the fast, strict workflow: it builds the library and the CLI and runs
+# the test suite. Building the app and packaging the .deb live in app-build.yml.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'App/**'
+      - '**.md'
+  pull_request:
+    paths-ignore:
+      - 'App/**'
+      - '**.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: swift --version
+
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: swiftpm-${{ runner.os }}-${{ hashFiles('Package.swift') }}-${{ hashFiles('Sources/**/*.swift', 'Tests/**/*.swift') }}
+          restore-keys: |
+            swiftpm-${{ runner.os }}-${{ hashFiles('Package.swift') }}-
+            swiftpm-${{ runner.os }}-
+
+      - name: Build
+        run: swift build --build-tests
+
+      - name: Test
+        run: swift test --parallel
+
+      # The CLI is what makes the engine usable without the app, and it is the
+      # only place the filesystem-facing half is exercised. Scaffold a project,
+      # read it back, and check the plan it prints.
+      - name: Smoke-test the CLI
+        run: |
+          set -euo pipefail
+          .build/debug/theosstudio help > /dev/null
+          .build/debug/theosstudio env
+
+          rm -rf /tmp/smoke && mkdir -p /tmp/smoke
+          .build/debug/theosstudio new tweak Smoky --dir /tmp/smoke/Smoky \
+            --scheme rootless --identifier com.example.smoky --author Someone --email someone@example.com
+
+          test -f /tmp/smoke/Smoky/Makefile
+          test -f /tmp/smoke/Smoky/control
+          test -f /tmp/smoke/Smoky/Smoky.plist
+          grep -q 'export THEOS_PACKAGE_SCHEME = rootless' /tmp/smoke/Smoky/Makefile
+          grep -q 'TWEAK_NAME = Smoky' /tmp/smoke/Smoky/Makefile
+
+          .build/debug/theosstudio lint /tmp/smoke/Smoky
+          .build/debug/theosstudio plan /tmp/smoke/Smoky --final | tee /tmp/smoke/plan.txt
+          grep -q -- '-C /tmp/smoke/Smoky' /tmp/smoke/plan.txt
+          grep -q 'FINALPACKAGE=1' /tmp/smoke/plan.txt
+
+          # Every generated project must be self-describing: the app labels a
+          # folder by reading these two files back.
+          for kind in tweak tweakWithPreferences preferenceBundle application tool; do
+            .build/debug/theosstudio new "$kind" "Smoky$kind" --dir "/tmp/smoke/$kind" --identifier "com.example.smoky$kind"
+            .build/debug/theosstudio lint "/tmp/smoke/$kind"
+          done
+
+          # A tweak with preferences has to produce a subproject Theos can build.
+          test -f /tmp/smoke/tweakWithPreferences/prefs/Makefile
+          test -f /tmp/smoke/tweakWithPreferences/layout/Library/PreferenceLoader/Preferences/SmokytweakWithPreferences.plist
