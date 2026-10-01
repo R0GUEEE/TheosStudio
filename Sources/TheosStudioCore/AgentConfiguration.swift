@@ -7,7 +7,7 @@ import Foundation
 /// settings exist for people who have watched it work and would rather not
 /// approve forty small edits in a row — and every one of them still refuses a
 /// path that leaves the project, because that is a rule and not a preference.
-public enum AgentApprovalPolicy: String, CaseIterable, Sendable, Identifiable {
+public enum AgentApprovalPolicy: String, CaseIterable, Codable, Sendable, Identifiable {
     case askForChanges
     case askForBuildsAndInstalls
     case askForInstallsOnly
@@ -57,7 +57,7 @@ public enum AgentApprovalPolicy: String, CaseIterable, Sendable, Identifiable {
 /// Each of these is one line in the system prompt. They are switches because the
 /// wording matters and hand-written instructions drift; a user who wants
 /// something else writes it in their own words in the extra instructions.
-public enum AgentPreference: String, CaseIterable, Sendable, Identifiable {
+public enum AgentPreference: String, CaseIterable, Codable, Sendable, Identifiable {
     case explainFirst
     case minimalDiffs
     case confirmPrivateAPIs
@@ -127,7 +127,7 @@ public enum AgentPreference: String, CaseIterable, Sendable, Identifiable {
 }
 
 /// How much of the project goes into every request.
-public enum AgentContextMode: String, CaseIterable, Sendable, Identifiable {
+public enum AgentContextMode: String, CaseIterable, Codable, Sendable, Identifiable {
     /// The file contents are sent, so the agent rarely needs to read anything.
     case fullFiles
     /// Only the file names are sent; the agent reads what it needs. Smaller
