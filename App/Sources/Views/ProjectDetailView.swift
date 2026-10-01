@@ -5,6 +5,7 @@ import TheosStudioCore
 struct ProjectDetailView: View {
 
     @ObservedObject var store: StudioStore
+    @EnvironmentObject private var plugins: PluginManager
     @StateObject private var runner = BuildRunner()
     @StateObject private var installer = PackageInstaller()
     @State private var current: Project
@@ -16,6 +17,7 @@ struct ProjectDetailView: View {
     @State private var deletingEntry: ProjectEntry?
     @State private var toolOutcome: ProjectFileEditor.Outcome?
     @State private var testFlow: String?
+    @State private var pluginRequest: ProjectPluginRunRequest?
 
     init(store: StudioStore, project: Project) {
         _store = ObservedObject(wrappedValue: store)
@@ -41,6 +43,7 @@ struct ProjectDetailView: View {
             buildSection
             packageSection
             restartSection
+            projectPluginsSection
             toolsSection
             problemsSection
         }
@@ -83,6 +86,14 @@ struct ProjectDetailView: View {
         }
         .sheet(isPresented: $isShowingInstalled) {
             InstalledPackagesView(store: store, installer: installer, isPresented: $isShowingInstalled)
+        }
+        .sheet(item: $pluginRequest) { request in
+            PluginConsoleView(
+                store: store,
+                plugin: request.plugin,
+                action: request.action,
+                project: current
+            )
         }
         .sheet(item: $editorTarget) { target in
             NavigationView {
@@ -446,6 +457,38 @@ struct ProjectDetailView: View {
         }
     }
 
+    @ViewBuilder
+    private var projectPluginsSection: some View {
+        let projectPlugins = plugins.projectPlugins.filter { !$0.manifest.actions.isEmpty }
+        if !projectPlugins.isEmpty {
+            Section {
+                ForEach(projectPlugins) { plugin in
+                    ForEach(plugin.manifest.actions.filter { actionAvailable($0) }) { action in
+                        Button {
+                            pluginRequest = ProjectPluginRunRequest(plugin: plugin, action: action)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Label(action.title, systemImage: action.systemImage)
+                                Text(plugin.manifest.name)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("Plugins")
+            } footer: {
+                Text("Enabled project plugins run against this project. Manage them from the Plugins tab.")
+            }
+        }
+    }
+
+    private func actionAvailable(_ action: PluginAction) -> Bool {
+        if action.requiresPackage && current.builtPackage == nil { return false }
+        return true
+    }
+
     private var toolsSection: some View {
         Section {
             NavigationLink(destination: HeaderSearchView(store: store, project: current)) {
@@ -677,6 +720,12 @@ struct ProjectDetailView: View {
         formatter.timeStyle = .short
         return formatter
     }()
+}
+
+private struct ProjectPluginRunRequest: Identifiable {
+    let id = UUID()
+    let plugin: InstalledPlugin
+    let action: PluginAction
 }
 
 private struct FileRow: View {
