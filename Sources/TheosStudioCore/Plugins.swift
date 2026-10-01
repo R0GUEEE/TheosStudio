@@ -213,6 +213,9 @@ public enum PluginManifestValidator {
 
 public struct PluginInvocationContext: Equatable, Sendable {
     public var projectPath: String?
+    public var projectName: String?
+    public var packageIdentifier: String?
+    public var packagingScheme: String?
     public var packagePath: String?
     public var theosPath: String?
     public var homePath: String
@@ -220,12 +223,18 @@ public struct PluginInvocationContext: Equatable, Sendable {
 
     public init(
         projectPath: String? = nil,
+        projectName: String? = nil,
+        packageIdentifier: String? = nil,
+        packagingScheme: String? = nil,
         packagePath: String? = nil,
         theosPath: String? = nil,
         homePath: String,
         pluginPath: String? = nil
     ) {
         self.projectPath = projectPath
+        self.projectName = projectName
+        self.packageIdentifier = packageIdentifier
+        self.packagingScheme = packagingScheme
         self.packagePath = packagePath
         self.theosPath = theosPath
         self.homePath = homePath
@@ -238,6 +247,9 @@ public enum PluginTokenExpander {
         var result = value
         let replacements: [(String, String?)] = [
             ("{{project}}", context.projectPath),
+            ("{{projectName}}", context.projectName),
+            ("{{identifier}}", context.packageIdentifier),
+            ("{{scheme}}", context.packagingScheme),
             ("{{package}}", context.packagePath),
             ("{{theos}}", context.theosPath),
             ("{{home}}", context.homePath),
