@@ -41,6 +41,7 @@ struct RootView: View {
         }
         .onAppear {
             store.refreshToolchain()
+            store.probePrivileges()
             store.reloadProjects()
         }
     }

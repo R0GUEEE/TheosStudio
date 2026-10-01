@@ -1,21 +1,26 @@
 import SwiftUI
 import TheosStudioCore
 
-/// What this device can build with, and how to fix it when it cannot.
+/// What this device can build with, and what to do about what is missing.
 ///
-/// Theos cannot be vendored into an app: a tweak needs the clang, ldid, dpkg-deb
-/// and Logos that match the device, and they are all one `apt-get install` away
-/// from the package manager the device already has. So this screen's job is to
-/// name exactly what is missing and run the install.
+/// There are two different problems here and they used to be one button:
+/// *installing Theos* is copying files into a folder, and *installing the
+/// dependency packages* needs root. On a device where the app cannot become root,
+/// the first still works — so the screen separates them instead of failing at the
+/// first permission error.
 @MainActor
 struct ToolchainView: View {
 
     @ObservedObject var store: StudioStore
-    @State private var isInstalling = false
-    @State private var installLog: [String] = []
+    @StateObject private var installer = TheosInstallRunner()
     @State private var environmentOverride = ""
+    @State private var destination = ""
 
     private var report: ToolchainReport? { store.toolchain }
+
+    private var defaultDestination: String {
+        Paths.documents + "/Theos"
+    }
 
     var body: some View {
         NavigationView {
@@ -27,6 +32,7 @@ struct ToolchainView: View {
                     if !report.notes.isEmpty { notesSection(report) }
                 }
                 installSection
+                dependencySection
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Toolchain")
@@ -34,6 +40,7 @@ struct ToolchainView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         store.refreshToolchain()
+                        store.probePrivileges(force: true)
                     } label: {
                         Label("Rescan", systemImage: "arrow.clockwise")
                     }
@@ -41,13 +48,15 @@ struct ToolchainView: View {
             }
             .onAppear {
                 if store.toolchain == nil { store.refreshToolchain() }
+                store.probePrivileges()
                 environmentOverride = store.settings.theosPathOverride
+                if destination.isEmpty { destination = defaultDestination }
             }
         }
         .navigationViewStyle(.stack)
     }
 
-    // MARK: - Sections
+    // MARK: - Status
 
     private var statusSection: some View {
         Section {
@@ -65,19 +74,30 @@ struct ToolchainView: View {
                         .foregroundColor(.secondary)
                 }
             }
-            DetailRow(label: "Jailbreak", value: store.jailbreak.rootlessPrefix == nil ? "rootful" : "rootless (\(store.jailbreak.rootlessPrefix!))", monospaced: true)
-            DetailRow(label: "Running as", value: PackageInstaller.isRunningAsRoot ? "root" : "mobile")
+            DetailRow(
+                label: "Jailbreak",
+                value: store.jailbreak.rootlessPrefix == nil ? "rootful" : "rootless (\(store.jailbreak.rootlessPrefix!))",
+                monospaced: true
+            )
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Privileges").font(.footnote).foregroundColor(.secondary)
+                Text(store.privileges.summary).font(.footnote)
+            }
         } header: {
             Text("This device")
         } footer: {
-            Text("A package installed by dpkg needs root. When this app is run as mobile, dpkg fails with a permission error on the parts of the filesystem it writes; the package can then be installed from Sileo or Zebra instead.")
+            Text("A package installed by dpkg needs root, and so does apt-get. Building does not: a project and everything Theos writes during a build live in a folder this app already owns.")
         }
     }
 
     private func environmentSection(_ report: ToolchainReport) -> some View {
         Section {
             DetailRow(label: "Theos", value: report.theosRoot ?? "not found", monospaced: true)
-            DetailRow(label: "SDKs", value: report.sdkDirectories.isEmpty ? "none" : report.sdkDirectories.joined(separator: ", "), monospaced: true)
+            DetailRow(
+                label: "SDKs",
+                value: report.sdkDirectories.isEmpty ? "none" : report.sdkDirectories.joined(separator: ", "),
+                monospaced: true
+            )
             HStack {
                 TextField("Theos path", text: $environmentOverride)
                     .font(.system(size: 12, design: .monospaced))
@@ -100,7 +120,9 @@ struct ToolchainView: View {
         Section {
             ForEach(report.statuses, id: \.tool.name) { status in
                 HStack(spacing: 10) {
-                    Image(systemName: status.isInstalled ? "checkmark.circle.fill" : (status.tool.required ? "xmark.circle.fill" : "circle.dashed"))
+                    Image(systemName: status.isInstalled
+                          ? "checkmark.circle.fill"
+                          : (status.tool.required ? "xmark.circle.fill" : "circle.dashed"))
                         .foregroundColor(status.isInstalled ? .green : (status.tool.required ? .red : .secondary))
                     VStack(alignment: .leading, spacing: 1) {
                         Text(status.tool.name)
@@ -132,95 +154,130 @@ struct ToolchainView: View {
         }
     }
 
+    // MARK: - Installing Theos
+
     private var installSection: some View {
         Section {
-            if let report, !report.missingPackages.isEmpty {
-                Text(report.installCommand)
-                    .font(.system(size: 11, design: .monospaced))
-                    .textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Install into").font(.footnote).foregroundColor(.secondary)
+                TextField("Folder", text: $destination)
+                    .font(.system(size: 12, design: .monospaced))
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+            }
+
+            if installer.phase.isRunning {
+                VStack(alignment: .leading, spacing: 6) {
+                    ProgressView(value: installer.progress)
+                    Text(phaseText).font(.footnote).foregroundColor(.secondary)
+                    Button(role: .destructive) {
+                        installer.cancel()
+                    } label: {
+                        Label("Cancel", systemImage: "stop.circle")
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else {
                 Button {
-                    runApt([["update"], ["install", "-y"] + report.missingPackages])
+                    installer.start(store: store, destination: destination, installDependencies: true, fetchSDK: true)
                 } label: {
-                    Label("Install missing packages", systemImage: "arrow.down.circle")
+                    Label("Install Theos, an SDK and the packages", systemImage: "arrow.down.circle")
                 }
-                .disabled(isInstalling)
+                Button {
+                    installer.start(store: store, destination: destination, installDependencies: false, fetchSDK: true)
+                } label: {
+                    Label("Install Theos and an SDK only (no root)", systemImage: "folder.badge.plus")
+                }
+                Text("The second one needs no root at all: it clones Theos and unpacks an SDK into the folder above. It is what to use when this device will not let the app install packages.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
 
-            Button {
-                runApt([["update"], ["install", "-y", "theos"]])
-            } label: {
-                Label("Install Theos", systemImage: "shippingbox")
-            }
-            .disabled(isInstalling)
-
-            if isInstalling {
-                HStack {
-                    ProgressView().scaleEffect(0.8)
-                    Text("Running apt-get…").font(.footnote).foregroundColor(.secondary)
+            if !installer.warnings.isEmpty {
+                ForEach(Array(installer.warnings.enumerated()), id: \.offset) { _, warning in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                        Text(warning).font(.footnote)
+                    }
                 }
             }
 
-            if !installLog.isEmpty {
-                ConsoleText(lines: installLog)
-                    .frame(height: 220)
+            if !installer.log.isEmpty {
+                ConsoleText(lines: installer.log)
+                    .frame(height: 240)
                     .cornerRadius(8)
             }
         } header: {
-            Text("Fix it here")
+            Text("Install Theos")
         } footer: {
-            Text("These run apt-get on this device, the same command a terminal would. If the repository does not carry a package, the app cannot invent it — the output above is the real answer.")
+            Text("The official installer refuses to run as root and so does Theos itself, which is why this installs into a folder you own and points Theos at it. It fetches the same patched SDKs from theos/sdks that the official installer does.")
         }
     }
 
-    /// Runs `apt-get` steps one after another. Arguments are passed as an array,
-    /// never as a shell string: there is no `/bin/sh` at a path that is the same
-    /// across rootful and rootless bootstraps, and `&&` is not an argument.
-    private func runApt(_ steps: [[String]]) {
-        guard !steps.isEmpty else { return }
-        guard let apt = ToolLocator.locate(
-            "apt-get",
-            in: (store.toolchain?.binDirectories ?? store.jailbreak.binDirectories) + ["/usr/bin", "/bin", "/var/jb/usr/bin"],
-            exists: FS.fileExists
-        ) else {
-            installLog = ["apt-get was not found on this device, so the app cannot install anything for you."]
-            return
+    private var phaseText: String {
+        switch installer.phase {
+        case .idle: return ""
+        case .preparing: return "Looking up the newest SDK…"
+        case .working(let label): return "\(label) — step \(installer.completedSteps + 1) of \(installer.totalSteps)"
+        case .finished(let message): return message
+        case .failed(let message): return message
+        case .cancelled: return "Cancelled."
         }
+    }
 
-        isInstalling = true
-        var remaining = steps
-        let first = remaining.removeFirst()
-        installLog.append("$ apt-get " + first.joined(separator: " "))
+    // MARK: - The part that needs root
 
-        let process = ShellProcess(
-            executable: apt,
-            arguments: first,
-            environment: ProcessInfo.processInfo.environment
-        )
-        do {
-            try process.run(onLine: { line in
-                self.installLog.append(line)
-                if self.installLog.count > 500 {
-                    self.installLog.removeFirst()
-                }
-            }, onExit: { outcome in
-                DispatchQueue.main.async {
-                    self.installLog.append("— exit \(outcome.status)")
-                    if outcome.status != 0 {
-                        self.isInstalling = false
-                        self.store.refreshToolchain()
-                        return
-                    }
-                    if remaining.isEmpty {
-                        self.isInstalling = false
-                        self.store.refreshToolchain()
-                    } else {
-                        self.runApt(remaining)
+    private var dependencySection: some View {
+        Section {
+            if let report {
+                if report.missingPackages.isEmpty {
+                    Text("Every package Theos needs is already installed.")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text(report.installCommand)
+                        .font(.system(size: 11, design: .monospaced))
+                        .textSelection(.enabled)
+                    HStack {
+                        Button {
+                            UIPasteboard.general.string = report.installCommand
+                        } label: {
+                            Label("Copy command", systemImage: "doc.on.doc")
+                        }
+                        .buttonStyle(.borderless)
+                        Spacer()
+                        Button {
+                            installer.start(store: store, destination: destination, installDependencies: true, fetchSDK: false)
+                        } label: {
+                            Label("Install", systemImage: "arrow.down.circle")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(!store.privileges.canEscalate || installer.phase.isRunning)
                     }
                 }
-            })
-        } catch {
-            isInstalling = false
-            installLog.append(error.localizedDescription)
+            } else {
+                Text("Rescan to see which packages are missing.")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+        } header: {
+            Text("Dependency packages")
+        } footer: {
+            if store.privileges.canEscalate {
+                Text("clang, ldid, dpkg-deb, make, perl and git come from the package manager. These run as \(store.privileges.isRoot ? "root" : "sudo"), which is what makes them installable from here.")
+            } else {
+                Text(readOnlyFooter)
+            }
         }
+    }
+
+    private var readOnlyFooter: String {
+        let command = store.toolchain?.installCommand ?? "apt-get install -y theos-dependencies"
+        return """
+        This app is running as mobile and cannot become root, so it cannot install packages for you. \
+        Either install the packages from Sileo, or run this in a terminal on the device:
+
+        \(command)
+        """
     }
 }

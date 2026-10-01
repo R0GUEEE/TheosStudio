@@ -42,7 +42,14 @@ This repository contains:
   can be listed and removed from the same screen.
 - **Toolchain** — what this device can and cannot build with: Theos, its SDKs,
   `make`, `clang`, `ldid`, `dpkg-deb`, `perl` (Logos is a Perl script). Missing
-  tools come with the `apt-get install` line that fixes them, ready to run.
+  tools come with the `apt-get install` line that fixes them, ready to run — or
+  installed from the app when it is allowed to.
+- **Installing Theos** — the official installer's on-device path, split along the
+  line that decides whether it works: cloning Theos and unpacking a patched SDK is
+  copying files into a folder and needs no root at all, while the dependency
+  packages (`clang`, `ldid`, `git`, `perl`, …) come from the package manager and
+  do. When there is no way to become root the app installs the first part and
+  tells you exactly what to run for the second, instead of failing at both.
 
 ## Why it drives Theos instead of shipping a toolchain
 
@@ -59,10 +66,33 @@ that does not need a terminal.
 
 ## Requirements
 
-- A **jailbroken** device with **Theos** installed (Sileo/Zebra: `theos`, plus
-  `clang`, `ldid`, `dpkg`, `perl` if the repo's variant does not pull them in) and
-  an SDK in `$THEOS/sdks`.
-- iOS 15 or newer.
+- A **jailbroken** device on **iOS 15 or newer**, with **Theos** installed and an
+  SDK in `$THEOS/sdks`. If Theos is not there yet, the app can install it: the
+  Toolchain tab clones Theos and unpackes an SDK from `theos/sdks` into a folder
+  it owns — no root needed — or runs the package install for `clang`, `ldid`,
+  `git`, `perl` and the rest when it can.
+
+## Permissions
+
+An app installed from a `.deb` is launched by SpringBoard as `mobile`. That is
+enough to write a project and run `make`, because everything a build writes lives
+in a folder the app owns. It is **not** enough to run `apt-get` or `dpkg`: the
+bootstrap's directories belong to root.
+
+So the app asks for exactly one thing at a time, and never claims otherwise:
+
+| Action | Needs root | What the app does |
+| --- | --- | --- |
+| Edit, build, package a project | no | runs `make` itself |
+| Install Theos and an SDK into `~/Documents/Theos` | no | `git clone` + `curl` + `tar` |
+| Install `clang`, `ldid`, `git`, `perl`… | yes | `sudo -n apt-get install -y …` when passwordless sudo exists |
+| `dpkg -i` a built tweak | yes | `sudo -n dpkg -i …`, else hands the `.deb` to Sileo |
+| Respring | yes | `sudo -n sbreload`, else `sudo -n killall -9 SpringBoard` |
+
+`sudo -n` is deliberate: an app has no terminal, so a `sudo` that would ask for a
+password is treated as no `sudo` at all. When that is the case the Toolchain tab
+says so, shows the command to run from a root shell, and offers a Copy button —
+and every built `.deb` has a Share button, which is the route that always works.
 
 The app installs to `/var/jb/Applications` (rootless) or `/Applications`
 (rootful) and is signed on the device with `ldid`, because the entitlements a

@@ -101,7 +101,7 @@ struct SettingsView: View {
 
                 Section {
                     Toggle("Respring after installing", isOn: $store.settings.respringAfterInstall)
-                    DetailRow(label: "Running as", value: PackageInstaller.isRunningAsRoot ? "root" : "mobile")
+                    DetailRow(label: "Privileges", value: store.privileges.summary)
                 } header: {
                     Text("Installing")
                 } footer: {

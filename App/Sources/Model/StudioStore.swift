@@ -62,6 +62,11 @@ final class StudioStore: ObservableObject {
         didSet { persist() }
     }
     @Published var banner: BannerMessage?
+    /// How privileged commands can be run. Probed once at launch: whether sudo
+    /// works without a password is the difference between an app that installs
+    /// packages and one that can only build them.
+    @Published private(set) var privileges = PrivilegeContext(mode: .unprivileged)
+    private var didProbePrivileges = false
 
     let jailbreak: JailbreakLayout
 
@@ -107,6 +112,65 @@ final class StudioStore: ObservableObject {
     }
 
     var isReadyToBuild: Bool { toolchain?.isReadyToBuild ?? false }
+
+    // MARK: - Privileges
+
+    /// Asks `sudo` whether it would demand a password. `sudo -n` answers that by
+    /// failing instead of prompting, which is the only way an app can ask.
+    func probePrivileges(force: Bool = false) {
+        if didProbePrivileges && !force { return }
+        didProbePrivileges = true
+
+        if geteuid() == 0 {
+            privileges = PrivilegeResolver.resolve(isRoot: true, sudoPath: nil, sudoIsPasswordless: false)
+            return
+        }
+
+        let directories = (toolchain?.binDirectories ?? jailbreak.binDirectories) + ["/usr/bin", "/bin"]
+        guard let sudoPath = ToolLocator.locate("sudo", in: directories, exists: FS.fileExists) else {
+            privileges = PrivilegeResolver.resolve(isRoot: false, sudoPath: nil, sudoIsPasswordless: false)
+            return
+        }
+
+        let process = ShellProcess(
+            executable: sudoPath,
+            arguments: ["-n", "true"],
+            environment: ProcessInfo.processInfo.environment
+        )
+        do {
+            try process.run(onLine: { _ in }, onExit: { [weak self] outcome in
+                self?.privileges = PrivilegeResolver.resolve(
+                    isRoot: false,
+                    sudoPath: sudoPath,
+                    sudoIsPasswordless: outcome.status == 0
+                )
+            })
+        } catch {
+            privileges = PrivilegeResolver.resolve(isRoot: false, sudoPath: nil, sudoIsPasswordless: false)
+        }
+    }
+
+    /// Absolute paths for the tools a plan names, from the same directories a
+    /// build uses. A tool the engine already models keeps its resolved path.
+    func toolPaths(for names: [String]) -> [String: String] {
+        let directories = (toolchain?.binDirectories ?? jailbreak.binDirectories)
+            + ["/var/jb/usr/bin", "/usr/bin", "/bin", "/usr/local/bin"]
+        var paths: [String: String] = [:]
+        for name in names {
+            if let resolved = toolchain?.status(for: name)?.path {
+                paths[name] = resolved
+            } else if let resolved = ToolLocator.locate(name, in: directories, exists: FS.fileExists) {
+                paths[name] = resolved
+            }
+        }
+        return paths
+    }
+
+    /// True when the device looks like a Procursus bootstrap — the one where a
+    /// single `theos-dependencies` package exists.
+    var isProcursus: Bool {
+        FS.fileExists("/var/jb/.procursus_strapped") || FS.fileExists("/.procursus_strapped")
+    }
 
     /// The environment a build runs with: Theos's `PATH` additions plus the
     /// jailbreak's own binary directories.

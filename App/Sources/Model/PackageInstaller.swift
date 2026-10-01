@@ -56,8 +56,10 @@ final class PackageInstaller: ObservableObject {
             return
         }
 
+        log.append("Privileges: \(store.privileges.summary)")
         phase = .working("Installing")
-        run(dpkg, ["-i", debPath]) { [weak self] outcome in
+        let command = store.privileges.wrapped(dpkg, ["-i", debPath])
+        run(command.executable, command.arguments) { [weak self] outcome in
             guard let self else { return }
             if outcome.succeeded {
                 self.log.append("Installed.")
@@ -70,11 +72,12 @@ final class PackageInstaller: ObservableObject {
                 // dpkg's own message is the useful part; the app adds the one
                 // thing dpkg cannot know, which is that this app may not be
                 // allowed to write where dpkg needs to.
-                let reason = self.lastMeaningfulLine(outcome.output) ?? "dpkg exited with status \(outcome.status)"
-                self.log.append(reason)
-                if !self.isRoot {
-                    self.log.append("This app is not running as root, which dpkg needs for the parts of the filesystem it writes. If the .deb is fine, install it from Sileo or Zebra instead — the Share button hands it over.")
+                var reason = self.lastMeaningfulLine(outcome.output) ?? "dpkg exited with status \(outcome.status)"
+                if !store.privileges.canEscalate {
+                    // Say what to do about it, not just what went wrong.
+                    reason += "\n\n" + store.privileges.remedy(for: "\(dpkg) -i '\(debPath)'")
                 }
+                self.log.append(reason)
                 self.phase = .failed(reason)
             }
         }
@@ -88,7 +91,8 @@ final class PackageInstaller: ObservableObject {
         }
         log = ["Removing \(identifier)"]
         phase = .working("Removing")
-        run(dpkg, ["-r", identifier]) { [weak self] outcome in
+        let command = store.privileges.wrapped(dpkg, ["-r", identifier])
+        run(command.executable, command.arguments) { [weak self] outcome in
             guard let self else { return }
             if outcome.succeeded {
                 self.log.append("Removed \(identifier).")
@@ -107,13 +111,15 @@ final class PackageInstaller: ObservableObject {
     func respring(store: StudioStore) {
         phase = .working("Respringing")
         if let reload = toolPath(named: "sbreload", store: store) {
-            run(reload, []) { [weak self] outcome in
+            let command = store.privileges.wrapped(reload, [])
+            run(command.executable, command.arguments) { [weak self] outcome in
                 self?.finishRespring(outcome, command: "sbreload")
             }
             return
         }
         if let killall = toolPath(named: "killall", store: store) {
-            run(killall, ["-9", "SpringBoard"]) { [weak self] outcome in
+            let command = store.privileges.wrapped(killall, ["-9", "SpringBoard"])
+            run(command.executable, command.arguments) { [weak self] outcome in
                 self?.finishRespring(outcome, command: "killall -9 SpringBoard")
             }
             return
