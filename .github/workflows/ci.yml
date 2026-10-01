@@ -50,6 +50,14 @@ jobs:
       - name: Build
         run: swift build --build-tests
 
+      - name: Test the suites this change touches, serially
+        run: |
+          set -euo pipefail
+          # Serial on purpose: a test process that dies takes its whole worker
+          # with it under --parallel, and the name of the test that crashed is
+          # then a guess.
+          swift test --filter 'TheosInstallerTests|AgentProviderTests|AgentModelListTests|PrivilegesTests'
+
       - name: Test
         run: swift test --parallel
 
