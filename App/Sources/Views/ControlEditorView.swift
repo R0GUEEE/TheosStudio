@@ -27,7 +27,6 @@ struct ControlEditorView: View {
     @State private var isRawMode = false
     @State private var saved = ""
     @State private var newFieldName = ""
-    @State private var isAddingField = false
     @State private var loadFailure: String?
 
     private var issues: [ValidationIssue] {
@@ -88,13 +87,25 @@ struct ControlEditorView: View {
                                 .disableAutocorrection(true)
                         }
                     }
-                    Button {
-                        isAddingField = true
-                    } label: {
-                        Label("Add field", systemImage: "plus")
+                    HStack {
+                        TextField("New field name", text: $newFieldName)
+                            .font(.system(size: 13, design: .monospaced))
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                        Button("Add") {
+                            let key = ControlFile.canonicalKeyCase(newFieldName.trimmingCharacters(in: .whitespaces))
+                            if !key.isEmpty {
+                                control[key] = control[key] ?? ""
+                            }
+                            newFieldName = ""
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(newFieldName.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 } header: {
                     Text("Other fields")
+                } footer: {
+                    Text("Debian field names are case-insensitive; the canonical spelling is used when the file is written. Fields the form does not know about are kept here and survive editing.")
                 }
             }
 
@@ -124,19 +135,6 @@ struct ControlEditorView: View {
             }
         }
         .onAppear(perform: load)
-        .alert("New field", isPresented: $isAddingField) {
-            TextField("Field name", text: $newFieldName)
-            Button("Add") {
-                let key = ControlFile.canonicalKeyCase(newFieldName.trimmingCharacters(in: .whitespaces))
-                if !key.isEmpty {
-                    control[key] = control[key] ?? ""
-                }
-                newFieldName = ""
-            }
-            Button("Cancel", role: .cancel) { newFieldName = "" }
-        } message: {
-            Text("Debian field names are case-insensitive; the canonical spelling is used when the file is written.")
-        }
     }
 
     private var isModified: Bool {

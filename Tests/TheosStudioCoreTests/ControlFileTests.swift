@@ -31,10 +31,21 @@ final class ControlFileTests: XCTestCase {
         XCTAssertEqual(control["Description"], "A tweak that does a thing\nand keeps explaining it on a second line.")
     }
 
-    func testRoundTripPreservesFieldsAndOrder() {
+    /// Serialising is what normalises field order, so the property to hold is
+    /// idempotency: writing a parsed file twice produces the same bytes.
+    func testSerialisingIsIdempotent() {
+        let once = ControlFile.parse(sample).serialized()
+        let twice = ControlFile.parse(once).serialized()
+        XCTAssertEqual(once, twice)
+    }
+
+    func testRoundTripPreservesEveryFieldValue() {
         let control = ControlFile.parse(sample)
         let reparsed = ControlFile.parse(control.serialized())
-        XCTAssertEqual(reparsed, control)
+        XCTAssertEqual(reparsed.fields.map(\.key), control.orderedFields().map(\.key))
+        for field in control.fields {
+            XCTAssertEqual(reparsed[field.key], field.value, "value of \(field.key) changed")
+        }
     }
 
     func testSerialisingWritesContinuationsWithALeadingSpace() {
@@ -128,6 +139,7 @@ final class ControlFileTests: XCTestCase {
         var control = ControlFile()
         control["Package"] = "com.example.a"
         control["Version"] = "1.0"
+        control["Architecture"] = "iphoneos-arm64"
         control["Description"] = "d"
         control["Maintainer"] = "Someone <a@b.c>"
         let issues = ControlValidator.issues(for: control, kind: .tool, projectName: "A")

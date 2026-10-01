@@ -175,7 +175,8 @@ public struct ProjectManifest: Equatable, Sendable {
         self.declaredScheme = declaredScheme
     }
 
-    public static func parse(makefile: String, control: String) -> ProjectManifest {
+    public static func parse(makefile source: String, control: String) -> ProjectManifest {
+        let makefile = source.normalisedLineEndings()
         var manifest = ProjectManifest()
         let controlFile = ControlFile.parse(control)
         manifest.packageIdentifier = controlFile.packageIdentifier

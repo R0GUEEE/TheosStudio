@@ -13,11 +13,12 @@ public struct ControlField: Equatable, Sendable {
 
 /// A Debian control file.
 ///
-/// Field order is preserved and unknown fields survive a round trip, because a
-/// control file is the one artefact every jailbreak package manager reads and it
-/// is edited by hand as often as it is generated. Values may contain newlines
-/// (the `Description` continuation lines); `serialized()` writes them back with
-/// the leading space Debian requires.
+/// Values survive a round trip exactly, including the newlines a `Description`
+/// continuation line is made of, and fields the app does not know about are kept
+/// and written back. `serialized()` orders the fields it knows the way Debian
+/// conventionally writes them and appends the rest, which makes
+/// `parse(serialize(_))` idempotent — the property that matters, because a
+/// control file is the one artefact every package manager on the device reads.
 public struct ControlFile: Equatable, Sendable {
     public private(set) var fields: [ControlField]
 
@@ -60,7 +61,8 @@ public struct ControlFile: Equatable, Sendable {
 
     /// Parses a control file. Lenient on purpose: a file being edited in the app
     /// is often temporarily malformed and the editor must not lose fields.
-    public static func parse(_ text: String) -> ControlFile {
+    public static func parse(_ source: String) -> ControlFile {
+        let text = source.normalisedLineEndings()
         var fields: [ControlField] = []
         var pendingKey: String?
         var pendingValue = ""
@@ -74,10 +76,7 @@ public struct ControlFile: Equatable, Sendable {
         }
 
         for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
-            var line = String(rawLine)
-            if line.hasSuffix("\r") {
-                line.removeLast()
-            }
+            let line = String(rawLine)
             if line.isEmpty {
                 flush()
                 continue
