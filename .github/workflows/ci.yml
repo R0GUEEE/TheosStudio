@@ -65,10 +65,10 @@ jobs:
           # Serial on purpose: a test process that dies takes its whole worker
           # with it under --parallel, and the name of the test that crashed is
           # then a guess.
-          swift test --filter 'TheosInstallerTests|AgentProviderTests|AgentModelListTests|PrivilegesTests'
+          swift test --filter 'MakefileEditorTests|CrashLogParserTests|GitPorcelainTests|DebListingTests|TheosInstallerTests|AgentProviderTests|AgentModelListTests|PrivilegesTests'
 
       - name: Test
-        run: swift test --parallel
+        run: swift test
 
       # The CLI is what makes the engine usable without the app, and it is the
       # only place the filesystem-facing half is exercised. Scaffold a project,

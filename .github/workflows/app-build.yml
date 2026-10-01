@@ -65,7 +65,7 @@ jobs:
           set -euo pipefail
           # The app is a shell over the engine; there is no point building the
           # shell if what it drives is broken.
-          swift test --parallel
+          swift test
 
       - name: Generate the Xcode project
         run: |
