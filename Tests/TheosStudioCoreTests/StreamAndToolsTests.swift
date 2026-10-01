@@ -343,7 +343,7 @@ final class AgentExtraBodyTests: XCTestCase {
     }
 
     func testTheStreamFlagIsOnlySentWhenAskedFor() throws {
-        let request = AgentRequest(model: "m", messages: [.user("hi")], stream: true)
+        var request = AgentRequest(model: "m", messages: [.user("hi")], stream: true)
         var object = try XCTUnwrap(
             JSONSerialization.jsonObject(with: try JSONEncoder().encode(request)) as? [String: Any]
         )
