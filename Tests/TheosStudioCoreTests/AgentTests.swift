@@ -26,6 +26,7 @@ final class AgentActionTests: XCTestCase {
             case "replace_in_file": arguments = #"{"path":"a.x","find":"a","replace":"b"}"#
             case "update_control": arguments = #"{"key":"Version","value":"1.0"}"#
             case "finish": arguments = #"{"summary":"done"}"#
+            case "search_headers": arguments = #"{"query":"SBIconView"}"#
             default: arguments = "{}"
             }
             let action = AgentActionParser.parse(call(name, arguments))
