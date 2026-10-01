@@ -239,6 +239,10 @@ public struct AgentRequest: Encodable, Sendable {
     /// whole file can be cut off mid-argument, which looks like the model
     /// producing broken JSON rather than being truncated.
     public var maxTokens: Int?
+    /// Merged into the request body verbatim, for parameters only one gateway
+    /// understands (routing hints, reasoning budget, provider order). Written
+    /// first, so the fields above always win over a typo in here.
+    public var extraBody: [String: JSONValue]?
 
     public init(
         model: String,
@@ -246,7 +250,8 @@ public struct AgentRequest: Encodable, Sendable {
         tools: [AgentTool]? = nil,
         toolChoice: String? = nil,
         temperature: Double? = nil,
-        maxTokens: Int? = nil
+        maxTokens: Int? = nil,
+        extraBody: [String: JSONValue]? = nil
     ) {
         self.model = model
         self.messages = messages
@@ -254,6 +259,15 @@ public struct AgentRequest: Encodable, Sendable {
         self.toolChoice = toolChoice
         self.temperature = temperature
         self.maxTokens = maxTokens
+        self.extraBody = extraBody
+    }
+
+    /// A coding key for a name that is not in the schema above.
+    private struct DynamicKey: CodingKey {
+        var stringValue: String
+        init(stringValue: String) { self.stringValue = stringValue }
+        var intValue: Int? { nil }
+        init?(intValue: Int) { nil }
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -264,6 +278,12 @@ public struct AgentRequest: Encodable, Sendable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+
+        for (key, value) in (extraBody ?? [:]).sorted(by: { $0.key < $1.key }) {
+            guard !key.isEmpty else { continue }
+            try container.encode(value, forKey: DynamicKey(stringValue: key))
+        }
+
         try container.encode(model, forKey: .model)
         try container.encode(messages, forKey: .messages)
         if let tools, !tools.isEmpty {

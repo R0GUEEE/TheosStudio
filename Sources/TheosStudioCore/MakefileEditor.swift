@@ -186,6 +186,78 @@ public enum MakefileEditor {
         return nil
     }
 
+    // MARK: - The variables worth a form
+
+    /// The settings a build form can offer without turning into a Makefile
+    /// editor: the ones people actually change, and the escape hatch for
+    /// everything else.
+    public struct Settings: Equatable, Sendable {
+        public var target: String
+        public var architectures: String
+        public var installTargetProcesses: String
+        /// Anything else, written as `NAME = value` at the end of the file.
+        public var extraVariables: [String: String]
+
+        public init(
+            target: String = "",
+            architectures: String = "",
+            installTargetProcesses: String = "",
+            extraVariables: [String: String] = [:]
+        ) {
+            self.target = target
+            self.architectures = architectures
+            self.installTargetProcesses = installTargetProcesses
+            self.extraVariables = extraVariables
+        }
+    }
+
+    public static func settings(in makefile: String) -> Settings {
+        Settings(
+            target: readValue("TARGET", in: makefile) ?? "",
+            architectures: readValue("ARCHS", in: makefile) ?? "",
+            installTargetProcesses: readValue("INSTALL_TARGET_PROCESSES", in: makefile) ?? ""
+        )
+    }
+
+    /// Writes the form back. Only the fields that differ are written, so a
+    /// Makefile with a comment explaining a value keeps its comment.
+    public static func applying(_ settings: Settings, to makefile: String) -> EditResult {
+        var text = makefile
+        func apply(_ name: String, _ value: String) {
+            guard !value.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+            guard readValue(name, in: text) != value else { return }
+            text = setValue(name, to: value, in: text)
+        }
+
+        apply("TARGET", settings.target)
+        apply("ARCHS", settings.architectures)
+        apply("INSTALL_TARGET_PROCESSES", settings.installTargetProcesses)
+        for (name, value) in settings.extraVariables.sorted(by: { $0.key < $1.key }) {
+            guard !name.trimmingCharacters(in: .whitespaces).isEmpty,
+                  !value.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+            guard readValue(name, in: text) != value else { continue }
+            text = setValue(name, to: value, in: text)
+        }
+
+        guard text != makefile else {
+            return EditResult(text: makefile, changed: false, reason: "Nothing to change.")
+        }
+        return EditResult(text: text, changed: true)
+    }
+
+    /// The variables a project's Makefile defines, for a form that shows what is
+    /// there rather than a fixed list.
+    public static func variables(in makefile: String) -> [(name: String, value: String)] {
+        var seen = Set<String>()
+        var result: [(String, String)] = []
+        for rawLine in makefile.normalisedLineEndings().split(separator: "\n", omittingEmptySubsequences: false) {
+            guard let name = assignmentName(in: String(rawLine)), seen.insert(name).inserted else { continue }
+            guard let value = readValue(name, in: makefile) else { continue }
+            result.append((name, value))
+        }
+        return result
+    }
+
     /// The Theos variable a source file belongs in, and whether that is knowable.
     public static func isSourceFile(_ path: String) -> Bool {
         let lower = path.lowercased()
