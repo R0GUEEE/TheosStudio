@@ -469,7 +469,7 @@ final class CodeEditorContainer: UIView {
         let storage = NSTextStorage()
         let layoutManager = NSLayoutManager()
         storage.addLayoutManager(layoutManager)
-        let container = NSTextContainer(size: CGSize(width: 0, height: .greatestFiniteMagnitude))
+        let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
         container.widthTracksTextView = true
         layoutManager.addTextContainer(container)
         textView = UITextView(frame: .zero, textContainer: container)
@@ -485,7 +485,7 @@ final class CodeEditorContainer: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let width = gutterWidth > 0 ? gutterWidth + gutterSpace : 0
+        let width: CGFloat = gutterWidth > 0 ? gutterWidth + gutterSpace : 0
         gutter.frame = CGRect(x: 0, y: 0, width: width, height: bounds.height)
         gutter.isHidden = gutterWidth == 0
         textView.frame = CGRect(x: width, y: 0, width: bounds.width - width, height: bounds.height)
