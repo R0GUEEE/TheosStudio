@@ -71,6 +71,8 @@ final class StudioStore: ObservableObject {
     }
     /// The project the assistant tab is working on.
     @Published var assistantProjectPath: String?
+    /// One-shot tab navigation request. RootView consumes and clears it.
+    @Published var requestedTab: Int?
     @Published var banner: BannerMessage?
     /// How privileged commands can be run. Probed once at launch: whether sudo
     /// works without a password is the difference between an app that installs
@@ -117,6 +119,11 @@ final class StudioStore: ObservableObject {
     private func persistAgent() {
         guard let data = try? JSONEncoder().encode(agent) else { return }
         UserDefaults.standard.set(data, forKey: Self.agentKey)
+    }
+
+    func openAssistant(for project: Project? = nil) {
+        if let project { assistantProjectPath = project.path }
+        requestedTab = 1
     }
 
     // MARK: - Toolchain
