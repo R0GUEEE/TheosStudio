@@ -463,7 +463,7 @@ final class CodeEditorContainer: UIView {
     }
 
     private var gutterWidth: CGFloat = 46
-    private let gutterSpace = 4
+    private let gutterSpace: CGFloat = 4
 
     override init(frame: CGRect) {
         let storage = NSTextStorage()
@@ -529,14 +529,17 @@ final class LineNumberGutterView: UIView {
 
         var lineNumber = 1
         let full = NSRange(location: 0, length: text.length)
+        // A local: the closure below is escaping, so it cannot reach back into
+        // the view for its own bounds.
+        let rightEdge = bounds.width
 
         text.enumerateSubstrings(in: full, options: [.byParagraphs, .substringNotRequired]) { _, range, _, _ in
             let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             let lineRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: container)
             let y = lineRect.minY + inset.top - offset
-            let label = "\\(lineNumber)" as NSString
+            let label = "\(lineNumber)" as NSString
             let size = label.size(withAttributes: attributes)
-            label.draw(at: CGPoint(x: bounds.width - size.width - 6, y: y), withAttributes: attributes)
+            label.draw(at: CGPoint(x: rightEdge - size.width - 6, y: y), withAttributes: attributes)
             lineNumber += 1
         }
 
