@@ -46,18 +46,19 @@ public enum DeviceLogs {
 
     /// A tweak's log lines are the ones that mention it: its own `NSLog` tag, or
     /// the package it came from.
-    public static func searchTerms(for project: Project?) -> [String] {
-        guard let project else { return [] }
-        var terms = ["[\(project.name)]", project.name]
-        if let identifier = project.packageIdentifier {
-            terms.append(identifier)
+    public static func searchTerms(name: String, packageIdentifier: String? = nil) -> [String] {
+        guard !name.isEmpty else { return [] }
+        var terms = ["[\(name)]", name]
+        if let packageIdentifier, !packageIdentifier.isEmpty {
+            terms.append(packageIdentifier)
         }
         return terms
     }
 
-    /// What to filter by when nothing has been typed.
-    public static func defaultQuery(for project: Project?) -> String {
-        project.map { "[\($0.name)]" } ?? ""
+    /// What to filter by when nothing has been typed: the tag the tweak's own
+    /// `NSLog` lines carry.
+    public static func defaultQuery(name: String) -> String {
+        name.isEmpty ? "" : "[\(name)]"
     }
 }
 

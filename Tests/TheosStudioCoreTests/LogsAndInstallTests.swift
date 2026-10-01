@@ -46,16 +46,13 @@ final class DeviceLogsTests: XCTestCase {
     }
 
     func testTheTweaksOwnTagIsTheDefaultFilter() {
-        let project = Project(
-            path: "/p",
-            name: "MyTweak",
-            manifest: ProjectManifest(name: "MyTweak", kind: .tweak, packageIdentifier: "com.example.mytweak", version: "1.0"),
-            builtPackage: nil,
-            builtDate: nil
-        )
-        XCTAssertEqual(DeviceLogs.defaultQuery(for: project), "[MyTweak]")
-        XCTAssertTrue(DeviceLogs.searchTerms(for: project).contains("com.example.mytweak"))
-        XCTAssertEqual(DeviceLogs.defaultQuery(for: nil), "")
+        XCTAssertEqual(DeviceLogs.defaultQuery(name: "MyTweak"), "[MyTweak]")
+        XCTAssertEqual(DeviceLogs.defaultQuery(name: ""), "")
+
+        let terms = DeviceLogs.searchTerms(name: "MyTweak", packageIdentifier: "com.example.mytweak")
+        XCTAssertEqual(terms.first, "[MyTweak]", "the tag the tweak logs with comes first")
+        XCTAssertTrue(terms.contains("com.example.mytweak"))
+        XCTAssertTrue(DeviceLogs.searchTerms(name: "").isEmpty)
     }
 }
 
