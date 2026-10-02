@@ -11,6 +11,9 @@ import TheosStudioCore
 @MainActor
 struct AgentEnvironment {
     var projectPath: String
+    var appStatus: () -> String
+    var listProjects: () -> String
+    var refreshToolchain: () -> String
     var listFiles: () -> [ProjectEntry]
     var readFile: (String) -> String?
     var writeFile: (String, String) throws -> Void
@@ -89,6 +92,15 @@ enum AgentExecutor {
 
     static func prepare(_ action: AgentAction, in environment: AgentEnvironment) -> Preparation {
         switch action {
+        case .appStatus:
+            return .immediate(environment.appStatus())
+
+        case .listProjects:
+            return .immediate(environment.listProjects())
+
+        case .refreshToolchain:
+            return .immediate(environment.refreshToolchain())
+
         case .listFiles:
             let entries = environment.listFiles()
             guard !entries.isEmpty else { return .immediate("The project directory is empty.") }
