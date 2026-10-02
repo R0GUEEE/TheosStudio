@@ -57,7 +57,7 @@ struct StudioHero<Content: View>: View {
         subtitle: String? = nil,
         systemImage: String,
         tint: Color = .accentColor,
-        @ViewBuilder content: () -> Content = { EmptyView() }
+        @ViewBuilder content: () -> Content
     ) {
         self.eyebrow = eyebrow
         self.title = title
