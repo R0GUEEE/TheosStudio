@@ -12,9 +12,9 @@ final class AgentActionTests: XCTestCase {
         // runtime with a confusing "no tool with that name" — so the names are
         // checked against each other, not just against the code.
         let expected: Set<String> = [
-            "list_files", "read_file", "write_file", "replace_in_file",
-            "update_control", "build", "install", "read_crashes", "git_status",
-            "git_diff", "search_headers", "finish",
+            "app_status", "list_projects", "refresh_toolchain", "list_files", "read_file",
+            "write_file", "replace_in_file", "update_control", "build", "install",
+            "read_crashes", "git_status", "git_diff", "search_headers", "finish",
         ]
         XCTAssertEqual(AgentToolCatalog.names, expected)
 
@@ -451,7 +451,7 @@ final class AgentWireFormatTests: XCTestCase {
         guard let function = tools.first?["function"] as? [String: Any] else {
             return XCTFail("tools must be wrapped in a function object")
         }
-        XCTAssertEqual(function["name"] as? String, "list_files")
+        XCTAssertEqual(function["name"] as? String, AgentToolCatalog.all.first?.name)
         XCTAssertNotNil(function["parameters"])
     }
 
