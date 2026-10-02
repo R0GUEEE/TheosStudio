@@ -174,39 +174,70 @@ struct AssistantView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                if let project {
-                    Text(project.name).font(.subheadline.weight(.medium))
-                    StatusChip(text: project.displayScheme, color: .blue)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.indigo.opacity(0.12))
+                    Image(systemName: "sparkles")
+                        .font(.headline)
+                        .foregroundColor(.indigo)
+                }
+                .frame(width: 40, height: 40)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(project?.name ?? "Assistant")
+                        .font(.headline)
+                    Text(project?.packageIdentifier ?? "Select a project")
+                        .font(.caption.monospaced())
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
                 }
                 Spacer()
-                if session.isConfigured {
-                    StatusChip(text: store.agent.provider.displayName, color: .secondary)
-                    StatusChip(text: store.agent.model, color: .green)
-                } else {
-                    Button("Set up the model") { isShowingSettings = true }
-                        .font(.footnote)
+                if let project {
+                    StudioPill(
+                        text: project.displayScheme,
+                        systemImage: "shippingbox",
+                        tint: StudioUI.schemeColor(project.displayScheme)
+                    )
                 }
             }
-            switch session.phase {
-            case .thinking:
-                HStack(spacing: 6) {
-                    ProgressView().scaleEffect(0.6)
-                    Text("Working…").font(.caption).foregroundColor(.secondary)
+
+            if session.isConfigured {
+                HStack(spacing: 7) {
+                    StudioPill(text: store.agent.provider.displayName, systemImage: "network", tint: .secondary)
+                    StudioPill(text: store.agent.model, systemImage: "cpu", tint: .green)
+                    Spacer()
+                    if store.isReadyToBuild {
+                        StudioPill(text: "Build ready", systemImage: "hammer.fill", tint: .green)
+                    }
                 }
-            case .awaitingApproval:
-                Text("Waiting for your approval below.").font(.caption).foregroundColor(.orange)
-            case .failed(let message):
-                Text(message).font(.caption).foregroundColor(.red)
-            case .idle:
-                Text("Reads are free. Every edit, build and install stops here for approval.")
-                    .font(.caption)
+            }
+
+            Group {
+                switch session.phase {
+                case .thinking:
+                    HStack(spacing: 7) {
+                        ProgressView().controlSize(.small)
+                        Text("Agent is working…")
+                    }
                     .foregroundColor(.secondary)
+                case .awaitingApproval:
+                    Label("Review the requested action below", systemImage: "hand.raised.fill")
+                        .foregroundColor(.orange)
+                case .failed(let message):
+                    Label(message, systemImage: "exclamationmark.octagon.fill")
+                        .foregroundColor(.red)
+                case .idle:
+                    Label("Project-scoped agent · writes and device actions require approval", systemImage: "checkmark.shield")
+                        .foregroundColor(.secondary)
+                }
             }
+            .font(.caption)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Color(.secondarySystemGroupedBackground))
     }
 
     private var transcript: some View {
@@ -252,27 +283,51 @@ struct AssistantView: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            Menu {
-                ForEach(Self.prompts, id: \.self) { prompt in
-                    Button(prompt) { draft = prompt }
+        VStack(spacing: 8) {
+            HStack(alignment: .bottom, spacing: 8) {
+                Menu {
+                    ForEach(Self.prompts, id: \.self) { prompt in
+                        Button(prompt) { draft = prompt }
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.headline)
+                        .frame(width: 34, height: 34)
+                        .background(Color(.tertiarySystemFill))
+                        .clipShape(Circle())
                 }
-            } label: {
-                Image(systemName: "text.badge.plus").font(.title3)
+
+                TextField("Ask the agent to inspect, change, build…", text: $draft, onCommit: sendDraft)
+                    .textFieldStyle(.plain)
+                    .autocapitalization(.sentences)
+                    .disableAutocorrection(true)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(Color(.tertiarySystemFill))
+                    .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+
+                Button(action: sendDraft) {
+                    Image(systemName: session.phase.isBusy ? "stop.fill" : "arrow.up")
+                        .font(.headline.weight(.bold))
+                        .foregroundColor(.white)
+                        .frame(width: 38, height: 38)
+                        .background(Color.accentColor)
+                        .clipShape(Circle())
+                }
+                .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty || session.phase.isBusy || !session.isConfigured)
             }
 
-            TextField("Ask for a change, or what is wrong", text: $draft, onCommit: sendDraft)
-                .textFieldStyle(.roundedBorder)
-                .autocapitalization(.sentences)
-                .disableAutocorrection(true)
-
-            Button(action: sendDraft) {
-                Image(systemName: "arrow.up.circle.fill").font(.title2)
+            HStack {
+                Text("Changes, builds, and installs pause for approval.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Spacer()
             }
-            .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty || session.phase.isBusy || !session.isConfigured)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.top, 9)
+        .padding(.bottom, 8)
+        .background(.regularMaterial)
     }
 
     private static let prompts = [
