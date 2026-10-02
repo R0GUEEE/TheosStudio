@@ -311,7 +311,6 @@ final class AgentSession: ObservableObject {
     private var environment: AgentEnvironment?
     private var batch: [AgentToolCall] = []
     private var awaiting: (call: AgentToolCall, action: AgentAction, plan: AgentExecutor.Plan)?
-    private var toolExecutions = 0
     private var lastBuildSummary: String?
     private var task: Task<Void, Never>?
 
@@ -345,7 +344,6 @@ final class AgentSession: ObservableObject {
         self.environment = environment
         entries.append(Entry(kind: .user, text: text))
         history.append(.user(text))
-        toolExecutions = 0
         task = Task { await advance() }
     }
 
@@ -439,17 +437,7 @@ final class AgentSession: ObservableObject {
     private func processBatch() async -> Bool {
         guard let environment else { return true }
         while !batch.isEmpty {
-            guard toolExecutions < max(1, settings.maxToolCallsPerTurn) else {
-                entries.append(Entry(
-                    kind: .note,
-                    text: "Stopped after \(settings.maxToolCallsPerTurn) tool calls in one turn. Ask again to continue."
-                ))
-                batch = []
-                return true
-            }
-
             let call = batch.removeFirst()
-            toolExecutions += 1
             let action = AgentActionParser.parse(call)
 
             if case .finish(let summary) = action {
