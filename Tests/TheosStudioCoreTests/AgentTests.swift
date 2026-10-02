@@ -12,7 +12,7 @@ final class AgentActionTests: XCTestCase {
         // runtime with a confusing "no tool with that name" — so the names are
         // checked against each other, not just against the code.
         let expected: Set<String> = [
-            "app_status", "list_projects", "refresh_toolchain", "list_files", "read_file",
+            "app_status", "list_projects", "refresh_toolchain", "dependency_status", "install_dependencies", "list_files", "read_file",
             "write_file", "replace_in_file", "update_control", "build", "install",
             "read_crashes", "git_status", "git_diff", "search_headers", "finish",
         ]
@@ -34,6 +34,21 @@ final class AgentActionTests: XCTestCase {
                 XCTFail("\(name) parsed as unknown: \(reason)")
             }
         }
+    }
+
+    func testDependencyToolsParseAndHavePolicy() {
+        XCTAssertEqual(AgentActionParser.parse(call("dependency_status", "{}")), .dependencyStatus)
+        XCTAssertEqual(AgentActionParser.parse(call("install_dependencies", "{}")), .installDependencies(updateFirst: false))
+        XCTAssertEqual(AgentActionParser.parse(call("install_dependencies", #"{"update_first":true}"#)), .installDependencies(updateFirst: true))
+        XCTAssertEqual(decision(.dependencyStatus, canEscalate: false), .allowed)
+        guard case .refused(let reason) = decision(.installDependencies(updateFirst: false), canEscalate: false) else {
+            return XCTFail("expected dependency install to require privileges")
+        }
+        XCTAssertTrue(reason.contains("root"))
+    }
+
+    private func decision(_ action: AgentAction, canEscalate: Bool) -> AgentDecision {
+        AgentPolicy.decide(action, privilegesCanEscalate: canEscalate)
     }
 
     func testParsingEachToolCall() {
