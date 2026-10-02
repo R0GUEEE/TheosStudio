@@ -140,7 +140,7 @@ final class StudioStore: ObservableObject {
     /// Asks `sudo` whether it would demand a password. `sudo -n` answers that by
     /// failing instead of prompting, which is the only way an app can ask.
     func probePrivileges(force: Bool = false, completion: (() -> Void)? = nil) {
-        if didProbePrivileges && !force { return }
+        if didProbePrivileges && !force { completion?(); return }
         didProbePrivileges = true
 
         if geteuid() == 0 {
