@@ -178,37 +178,28 @@ jobs:
           dpkg-deb -I "$deb"
           dpkg-deb -c "$deb"
 
-          # The main binary has to be at Applications/TheosStudio.app/TheosStudio
-          # (under var/jb for the rootless package). Without it the package
-          # installs an app that cannot launch, which is exactly the failure this
-          # workflow exists to catch.
           if ! dpkg-deb -c "$deb" | grep -E 'Applications/TheosStudio\.app/TheosStudio$'; then
             echo "::error::$deb does not contain Applications/TheosStudio.app/TheosStudio"
             exit 1
           fi
 
           expected_arch=$([ "${{ matrix.layout }}" = "rootless" ] && echo iphoneos-arm64 || echo iphoneos-arm)
-          if [ "${{ matrix.layout }}" = "rootless" ]; then
-            if ! dpkg-deb -c "$deb" | grep -q 'var/jb/etc/sudoers.d/theosstudio          if [ "$actual_arch" != "$expected_arch" ]; then
+          actual_arch=$(dpkg-deb -f "$deb" Architecture)
+          if [ "$actual_arch" != "$expected_arch" ]; then
             echo "::error::$deb declares Architecture: $actual_arch, expected $expected_arch"
             exit 1
           fi
-          echo "OK: $deb ($actual_arch)"
 
-      - name: Upload the .deb
-        uses: actions/upload-artifact@v4
-        with:
-          name: theosstudio-deb-${{ matrix.layout }}
-          path: dist/*.deb
-          if-no-files-found: error
-          retention-days: 14
-; then
+          if [ "${{ matrix.layout }}" = "rootless" ]; then
+            if ! dpkg-deb -c "$deb" | grep -q 'var/jb/etc/sudoers.d/theosstudio$'; then
               echo "::error::rootless package is missing its TheosStudio sudo policy"
               exit 1
             fi
             tmpdir=$(mktemp -d)
+            trap 'rm -rf "$tmpdir"' EXIT
             dpkg-deb -x "$deb" "$tmpdir"
             policy="$tmpdir/var/jb/etc/sudoers.d/theosstudio"
+            test -f "$policy" || { echo "::error::sudo policy was not extracted"; exit 1; }
             grep -q '^mobile ALL=(root) NOPASSWD:' "$policy" || {
               echo "::error::TheosStudio sudo policy does not grant scoped passwordless commands"
               exit 1
@@ -217,13 +208,6 @@ jobs:
               echo "::error::TheosStudio sudo policy does not cover apt-get"
               exit 1
             }
-            rm -rf "$tmpdir"
-          fi
-
-          actual_arch=$(dpkg-deb -f "$deb" Architecture)
-          if [ "$actual_arch" != "$expected_arch" ]; then
-            echo "::error::$deb declares Architecture: $actual_arch, expected $expected_arch"
-            exit 1
           fi
           echo "OK: $deb ($actual_arch)"
 
