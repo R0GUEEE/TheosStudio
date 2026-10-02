@@ -119,7 +119,7 @@ final class TheosInstallRunner: ObservableObject {
             toolPaths: toolPaths,
             privileges: privileges,
             exists: FS.fileExists,
-            listDirectory: FS.list
+            listDirectory: FS.inspectDirectory
         )
         warnings = plan.warnings
         queue = plan.steps
