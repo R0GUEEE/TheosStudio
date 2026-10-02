@@ -139,18 +139,20 @@ final class StudioStore: ObservableObject {
 
     /// Asks `sudo` whether it would demand a password. `sudo -n` answers that by
     /// failing instead of prompting, which is the only way an app can ask.
-    func probePrivileges(force: Bool = false) {
+    func probePrivileges(force: Bool = false, completion: (() -> Void)? = nil) {
         if didProbePrivileges && !force { return }
         didProbePrivileges = true
 
         if geteuid() == 0 {
             privileges = PrivilegeResolver.resolve(isRoot: true, sudoPath: nil, sudoIsPasswordless: false)
+            completion?()
             return
         }
 
         let directories = (toolchain?.binDirectories ?? jailbreak.binDirectories) + ["/usr/bin", "/bin"]
         guard let sudoPath = ToolLocator.locate("sudo", in: directories, exists: FS.fileExists) else {
             privileges = PrivilegeResolver.resolve(isRoot: false, sudoPath: nil, sudoIsPasswordless: false)
+            completion?()
             return
         }
 
@@ -166,9 +168,11 @@ final class StudioStore: ObservableObject {
                     sudoPath: sudoPath,
                     sudoIsPasswordless: outcome.status == 0
                 )
+                completion?()
             })
         } catch {
             privileges = PrivilegeResolver.resolve(isRoot: false, sudoPath: nil, sudoIsPasswordless: false)
+            completion?()
         }
     }
 
