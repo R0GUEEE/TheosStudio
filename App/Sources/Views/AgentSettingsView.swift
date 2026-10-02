@@ -422,16 +422,13 @@ struct AgentSettingsView: View {
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundColor(.secondary)
             }
-            Stepper(value: $store.agent.maxToolCallsPerTurn, in: 1...40) {
-                Text("Tool calls per turn: \(store.agent.maxToolCallsPerTurn)")
-            }
             TextEditor(text: $store.agent.extraInstructions)
                 .font(.system(size: 12, design: .monospaced))
                 .frame(minHeight: 80)
         } header: {
             Text("Behaviour")
         } footer: {
-            Text("A low temperature writes plainer code. The tool limit is what stops a model that keeps building without getting anywhere. Extra instructions are added as a second system message on every request.")
+            Text("A low temperature writes plainer code. Agent tool execution is not capped; a turn continues until it finishes, is cancelled, encounters an error, or requires approval. Extra instructions are added as a second system message on every request.")
         }
     }
 
