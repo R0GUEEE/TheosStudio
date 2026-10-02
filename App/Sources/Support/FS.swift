@@ -24,6 +24,14 @@ enum FS {
         (try? FileManager.default.contentsOfDirectory(atPath: path)) ?? []
     }
 
+    /// Unlike `list`, preserves the difference between an empty directory and a
+    /// directory the app cannot inspect. Installer planning must never treat an
+    /// EACCES failure as permission to clone over an existing bootstrap path.
+    static func inspectDirectory(_ path: String) -> [String]? {
+        if !directoryExists(path) { return [] }
+        return try? FileManager.default.contentsOfDirectory(atPath: path)
+    }
+
     static func modificationDate(_ path: String) -> Date? {
         (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
     }
