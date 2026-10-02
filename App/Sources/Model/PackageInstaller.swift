@@ -48,6 +48,14 @@ final class PackageInstaller: ObservableObject {
     /// `dpkg -i` the package, then respring if the settings say so.
     func install(debPath: String, store: StudioStore) {
         guard !phase.isRunning else { return }
+        phase = .working("Checking privileges")
+        store.probePrivileges(force: true) { [weak self, weak store] in
+            guard let self, let store else { return }
+            self.installAfterPrivilegeProbe(debPath: debPath, store: store)
+        }
+    }
+
+    private func installAfterPrivilegeProbe(debPath: String, store: StudioStore) {
         guard FS.fileExists(debPath) else {
             let message = "The package is gone: \(debPath)"
             phase = .failed(message)
@@ -94,6 +102,14 @@ final class PackageInstaller: ObservableObject {
 
     func remove(identifier: String, store: StudioStore) {
         guard !phase.isRunning else { return }
+        phase = .working("Checking privileges")
+        store.probePrivileges(force: true) { [weak self, weak store] in
+            guard let self, let store else { return }
+            self.removeAfterPrivilegeProbe(identifier: identifier, store: store)
+        }
+    }
+
+    private func removeAfterPrivilegeProbe(identifier: String, store: StudioStore) {
         guard let dpkg = toolPath(named: "dpkg", store: store) else {
             phase = .failed("dpkg was not found.")
             return
