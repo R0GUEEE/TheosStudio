@@ -67,7 +67,7 @@ final class TheosInstallRunner: ObservableObject {
         self.totalSteps = 0
         self.queue = []
 
-        let needed = ["git", "tar", "xz", "mkdir", "apt-get"]
+        let needed = ["git", "tar", "xz", "mkdir", "mv", "apt-get"]
         toolPaths = store.toolPaths(for: needed)
 
         append("$ destination: \(destination)")
@@ -230,6 +230,36 @@ final class TheosInstallRunner: ObservableObject {
                 return
             }
             let size = (try? FileManager.default.attributesOfItem(atPath: temporary.path)[.size] as? NSNumber)??.intValue ?? 0
+            let needsRoot = destination == "/var/jb" || destination.hasPrefix("/var/jb/")
+            if needsRoot {
+                guard privileges.canEscalate, let mv = toolPaths["mv"] else {
+                    fail("Moving the SDK into \(destination) needs root, but no privileged mv is available.")
+                    return
+                }
+                let staged = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("theosstudio-" + UUID().uuidString + ".download").path
+                try? FileManager.default.removeItem(atPath: staged)
+                try FileManager.default.moveItem(atPath: temporary.path, toPath: staged)
+                let (executable, arguments) = privileges.wrapped(mv, ["-f", staged, destination])
+                append("→ Place SDK in Dopamine bootstrap: \(pretty(executable, arguments))")
+                let mover = ShellProcess(executable: executable, arguments: arguments, environment: environment)
+                self.process = mover
+                try mover.run(onLine: { [weak self] line in
+                    self?.append(line)
+                }, onExit: { [weak self] outcome in
+                    guard let self else { return }
+                    self.process = nil
+                    if outcome.status == 0 {
+                        self.append("  downloaded \(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))")
+                        self.completedSteps += 1
+                        self.runNext()
+                    } else {
+                        try? FileManager.default.removeItem(atPath: staged)
+                        self.fail("Could not move the SDK into the Dopamine bootstrap (exit \(outcome.status)).")
+                    }
+                })
+                return
+            }
             try? FileManager.default.removeItem(atPath: destination)
             try FileManager.default.moveItem(atPath: temporary.path, toPath: destination)
             append("  downloaded \(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))")
