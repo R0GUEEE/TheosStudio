@@ -201,7 +201,7 @@ public enum TheosInstaller {
         toolPaths: [String: String],
         privileges: PrivilegeContext,
         exists: (String) -> Bool = { _ in false },
-        listDirectory: (String) -> [String] = { _ in [] }
+        listDirectory: (String) -> [String]? = { _ in [] }
     ) -> TheosInstallPlan {
         let builder = InstallPlanBuilder(toolPaths: toolPaths)
 
@@ -265,7 +265,7 @@ public enum TheosInstaller {
         destinationAccess: InstallDestinationAccess,
         privileges: PrivilegeContext,
         exists: (String) -> Bool,
-        listDirectory: (String) -> [String]
+        listDirectory: (String) -> [String]?
     ) {
         let makefiles = destination + "/makefiles/common.mk"
         let needsRoot = destinationAccess == .privileged
@@ -274,7 +274,10 @@ public enum TheosInstaller {
             return
         }
         let alreadyThere = exists(makefiles)
-        let entries = listDirectory(destination)
+        guard let entries = listDirectory(destination) else {
+            builder.warn("\(destination) could not be inspected. Refusing to treat an unreadable directory as empty.")
+            return
+        }
 
         if builder.require("mkdir", because: "the Theos directory") {
             builder.add(InstallStep(
