@@ -100,8 +100,8 @@ final class TheosInstallerTests: XCTestCase {
         XCTAssertEqual(install?.arguments.contains("perl"), true)
     }
 
-    /// The whole point: without root the plan still installs Theos and its SDK,
-    /// because those are files in a folder. Only the packages are dropped.
+    /// A user-writable destination remains usable without root; only package
+    /// dependencies are omitted in that mode.
     func testUnprivilegedPlanHasNoRootStepsButStillInstallsTheos() {
         let plan = TheosInstaller.plan(
             options: options(),
@@ -242,7 +242,8 @@ final class TheosInstallerTests: XCTestCase {
         let plan = TheosInstaller.plan(
             options: TheosInstallOptions(destination: "/var/mobile/Documents/Theos", scope: .sdkOnly, sdkAsset: sdk),
             toolPaths: tools(including: allTools),
-            privileges: PrivilegeContext(mode: .root)
+            privileges: PrivilegeContext(mode: .root),
+            exists: { $0 == "/var/mobile/Documents/Theos/makefiles/common.mk" }
         )
         XCTAssertFalse(plan.steps.contains { $0.tool == "git" })
         XCTAssertFalse(plan.steps.contains { $0.tool == "apt-get" })
@@ -284,6 +285,56 @@ final class TheosInstallerTests: XCTestCase {
             plan.warnings.contains { $0.contains("is not a Theos checkout") && $0.contains("will not delete anything") },
             "\(plan.warnings)"
         )
+    }
+
+    func testSDKOnlyRejectsInvalidCheckout() {
+        let destination = "/var/mobile/Documents/Theos"
+        let plan = TheosInstaller.plan(
+            options: TheosInstallOptions(destination: destination, scope: .sdkOnly, sdkAsset: sdk),
+            toolPaths: tools(including: allTools),
+            privileges: PrivilegeContext(mode: .root),
+            exists: { _ in false }
+        )
+        XCTAssertFalse(plan.steps.contains { isDownload($0) })
+        XCTAssertTrue(plan.warnings.contains { $0.contains("not a valid Theos checkout") })
+    }
+
+    func testRootlessDestinationModelsEveryFilesystemStepAsPrivileged() {
+        let destination = "/var/jb/opt/theos"
+        let plan = TheosInstaller.plan(
+            options: options(destination: destination),
+            toolPaths: tools(including: allTools),
+            privileges: PrivilegeContext(mode: .sudo(path: "/var/jb/usr/bin/sudo"))
+        )
+        XCTAssertEqual(TheosInstallOptions.access(for: destination), .privileged)
+        XCTAssertTrue(plan.needsRoot)
+        let destinationSteps = plan.steps.filter { $0.tool != "apt-get" }
+        XCTAssertFalse(destinationSteps.isEmpty)
+        XCTAssertTrue(destinationSteps.allSatisfy(\.requiresRoot), "\(destinationSteps)")
+    }
+
+    func testUnprivilegedRootlessDestinationIsRefused() {
+        let destination = "/var/jb/opt/theos"
+        let plan = TheosInstaller.plan(
+            options: options(destination: destination),
+            toolPaths: tools(including: allTools),
+            privileges: PrivilegeContext(mode: .unprivileged)
+        )
+        XCTAssertFalse(plan.steps.contains { $0.tool == "git" || isDownload($0) })
+        XCTAssertTrue(plan.warnings.contains { $0.contains("needs root") })
+    }
+
+    func testUnreadableDestinationIsNotTreatedAsEmpty() {
+        let destination = "/var/jb/opt/theos"
+        let plan = TheosInstaller.plan(
+            options: options(destination: destination),
+            toolPaths: tools(including: allTools),
+            privileges: PrivilegeContext(mode: .root),
+            exists: { _ in false },
+            listDirectory: { _ in nil }
+        )
+        XCTAssertFalse(plan.steps.contains { $0.arguments.first == "clone" })
+        XCTAssertTrue(plan.warnings.contains { $0.contains("could not be inspected") })
     }
 
     // MARK: - SDK discovery
