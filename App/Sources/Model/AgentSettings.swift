@@ -22,7 +22,6 @@ struct AgentSettings: Codable, Equatable {
     /// Sent as a second system message on every request.
     var extraInstructions: String = ""
     /// How many tool executions one request may cause before the app stops it.
-    var maxToolCallsPerTurn: Int = 12
     /// What it may do without asking. The sandbox rules are not affected by this.
     var approvals: AgentApprovalPolicy = .askForChanges
     /// Standing instructions, as switches.
@@ -144,7 +143,6 @@ struct AgentSettings: Codable, Equatable {
         model = value(.model, "")
         temperature = value(.temperature, 0.2)
         extraInstructions = value(.extraInstructions, "")
-        maxToolCallsPerTurn = value(.maxToolCallsPerTurn, 12)
         runtimes = value(.runtimes, [:])
         approvals = value(.approvals, .askForChanges)
         preferences = value(.preferences, [])
