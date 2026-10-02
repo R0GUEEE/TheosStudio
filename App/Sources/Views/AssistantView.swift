@@ -659,9 +659,13 @@ private struct ApprovalCard: View {
                     .buttonStyle(.borderedProminent)
             }
         }
-        .padding(12)
-        .background(Color.orange.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(14)
+        .background(Color.orange.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .stroke(Color.orange.opacity(0.28), lineWidth: 1)
+        )
     }
 }
 
