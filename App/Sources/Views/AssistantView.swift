@@ -491,7 +491,20 @@ struct AssistantView: View {
     /// shows the same output — and waits for it, because the assistant needs the
     /// diagnostics as a value.
     private func runBuild(project: Project, clean: Bool, final: Bool) async -> BuildRunner.Outcome {
-        await withCheckedContinuation { continuation in
+        // Agent builds are self-healing for toolchain dependencies: if the scan
+        // already knows required packages are absent and this app can escalate,
+        // repair that state first, rescan, then build once. Source/compiler
+        // failures are never retried blindly.
+        if let report = store.toolchain,
+           !report.missingPackages.isEmpty,
+           store.privileges.canEscalate {
+            let repaired = await installDependencies(updateFirst: false)
+            if repaired.0 {
+                store.refreshToolchain()
+            }
+        }
+
+        return await withCheckedContinuation { continuation in
             var resumed = false
             runner.onOutcome = { outcome in
                 guard !resumed else { return }
