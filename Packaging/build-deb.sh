@@ -108,6 +108,7 @@ APP_REL="${INSTALL_PREFIX:+$INSTALL_PREFIX/}Applications/TheosStudio.app"
 [ -f "$APP_PATH/Info.plist" ] || die "'$APP_PATH' does not look like an app bundle (no Info.plist)"
 [ -f "$APP_PATH/TheosStudio" ] || die "'$APP_PATH/TheosStudio' is missing; the package must contain Applications/TheosStudio.app/TheosStudio"
 [ -x "$APP_PATH/TheosStudio" ] || die "'$APP_PATH/TheosStudio' is not executable; check the build output"
+[ -f "$APP_PATH/Theos/makefiles/common.mk" ] || die "'$APP_PATH/Theos' is missing; release packages must include the bundled Theos toolchain"
 
 CONTROL_TEMPLATE="$REPO_ROOT/Packaging/control.template"
 [ -f "$CONTROL_TEMPLATE" ] || die "control template not found at '$CONTROL_TEMPLATE'"
