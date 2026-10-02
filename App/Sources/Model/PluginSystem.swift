@@ -378,6 +378,26 @@ struct PluginCenterView: View {
     var body: some View {
         NavigationView {
             List {
+                Section {
+                    StudioHero(
+                        eyebrow: "Extensions",
+                        title: "Plugin Center",
+                        subtitle: "Add project actions, snippets, diagnostics, and workflow integrations without expanding the core app.",
+                        systemImage: "puzzlepiece.extension.fill",
+                        tint: .purple
+                    ) {
+                        HStack(spacing: 7) {
+                            StudioPill(text: "\(manager.plugins.count) installed", systemImage: "square.stack.3d.up.fill", tint: .purple)
+                            StudioPill(text: "\(manager.plugins.filter { $0.isEnabled }.count) enabled", systemImage: "checkmark.circle.fill", tint: .green)
+                            if !manager.loadIssues.isEmpty {
+                                StudioPill(text: "\(manager.loadIssues.count) issue\(manager.loadIssues.count == 1 ? "" : "s")", systemImage: "exclamationmark.triangle.fill", tint: .orange)
+                            }
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 6, trailing: 16))
+                    .listRowBackground(Color.clear)
+                }
+
                 if !store.projects.isEmpty {
                     Section {
                         Picker("Project context", selection: Binding(
