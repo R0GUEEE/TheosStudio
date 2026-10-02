@@ -55,7 +55,8 @@ final class AgentClient {
             tools: tools,
             toolChoice: "auto",
             temperature: settings.temperature,
-            maxTokens: settings.maxTokens > 0 ? settings.maxTokens : nil
+            maxTokens: settings.maxTokens > 0 ? settings.maxTokens : nil,
+            extraBody: settings.decodedExtraBody
         )
 
         var urlRequest = URLRequest(url: endpoint)
