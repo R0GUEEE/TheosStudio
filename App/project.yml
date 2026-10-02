@@ -59,6 +59,8 @@ targets:
       # Only the Swift sources. Resources/Info.plist and TheosStudio.entitlements
       # are consumed through build settings, not copied into the bundle.
       - path: Sources
+      - path: Resources/Assets.xcassets
+        buildPhase: resources
     dependencies:
       - package: TheosStudio
         product: TheosStudioCore
@@ -69,7 +71,8 @@ targets:
         INFOPLIST_FILE: Resources/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_ENTITLEMENTS: TheosStudio.entitlements
-        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
         LD_RUNPATH_SEARCH_PATHS:
           - "$(inherited)"
           - "@executable_path/Frameworks"
