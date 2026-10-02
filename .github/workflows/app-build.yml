@@ -86,11 +86,26 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build
 
+      - name: Bundle Theos into the app
+        run: |
+          set -euo pipefail
+          THEOS_DIR="$APP_BUNDLE_PATH/Theos"
+          rm -rf "$THEOS_DIR"
+          git clone --depth 1 --recursive https://github.com/theos/theos.git "$THEOS_DIR"
+          # Git metadata has no runtime value and would substantially inflate the package.
+          find "$THEOS_DIR" -name .git -type d -prune -exec rm -rf {} +
+          test -f "$THEOS_DIR/makefiles/common.mk" || {
+            echo "::error::bundled Theos is missing makefiles/common.mk"
+            exit 1
+          }
+          echo "Bundled Theos: $(du -sh "$THEOS_DIR" | awk '{print $1}')"
+
       - name: Verify the app bundle
         run: |
           set -euo pipefail
           test -d "$APP_BUNDLE_PATH" || { echo "::error::$APP_BUNDLE_PATH was not produced"; exit 1; }
           test -x "$APP_BUNDLE_PATH/TheosStudio" || { echo "::error::$APP_BUNDLE_PATH/TheosStudio is missing or not executable"; exit 1; }
+          test -f "$APP_BUNDLE_PATH/Theos/makefiles/common.mk" || { echo "::error::bundled Theos is missing"; exit 1; }
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_BUNDLE_PATH/Info.plist"
           /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP_BUNDLE_PATH/Info.plist"
           lipo -info "$APP_BUNDLE_PATH/TheosStudio"
@@ -178,8 +193,86 @@ jobs:
           dpkg-deb -I "$deb"
           dpkg-deb -c "$deb"
 
-          if ! dpkg-deb -c "$deb" | grep -E 'Applications/TheosStudio\.app/TheosStudio$'; then
+          if ! dpkg-deb -c "$deb" | grep -E 'Applications/TheosStudio\.app/TheosStudio
+
+          expected_arch=$([ "${{ matrix.layout }}" = "rootless" ] && echo iphoneos-arm64 || echo iphoneos-arm)
+          actual_arch=$(dpkg-deb -f "$deb" Architecture)
+          if [ "$actual_arch" != "$expected_arch" ]; then
+            echo "::error::$deb declares Architecture: $actual_arch, expected $expected_arch"
+            exit 1
+          fi
+
+          if [ "${{ matrix.layout }}" = "rootless" ]; then
+            if ! dpkg-deb -c "$deb" | grep -q 'var/jb/etc/sudoers.d/theosstudio$'; then
+              echo "::error::rootless package is missing its TheosStudio sudo policy"
+              exit 1
+            fi
+            tmpdir=$(mktemp -d)
+            trap 'rm -rf "$tmpdir"' EXIT
+            dpkg-deb -x "$deb" "$tmpdir"
+            policy="$tmpdir/var/jb/etc/sudoers.d/theosstudio"
+            test -f "$policy" || { echo "::error::sudo policy was not extracted"; exit 1; }
+            grep -q '^mobile ALL=(root) NOPASSWD:' "$policy" || {
+              echo "::error::TheosStudio sudo policy does not grant scoped passwordless commands"
+              exit 1
+            }
+            grep -q '/var/jb/usr/bin/apt-get' "$policy" || {
+              echo "::error::TheosStudio sudo policy does not cover apt-get"
+              exit 1
+            }
+          fi
+          echo "OK: $deb ($actual_arch)"
+
+      - name: Upload the .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: theosstudio-deb-${{ matrix.layout }}
+          path: dist/*.deb
+          if-no-files-found: error
+          retention-days: 14
+; then
             echo "::error::$deb does not contain Applications/TheosStudio.app/TheosStudio"
+            exit 1
+          fi
+          if ! dpkg-deb -c "$deb" | grep -E 'Applications/TheosStudio\.app/Theos/makefiles/common\.mk
+
+          expected_arch=$([ "${{ matrix.layout }}" = "rootless" ] && echo iphoneos-arm64 || echo iphoneos-arm)
+          actual_arch=$(dpkg-deb -f "$deb" Architecture)
+          if [ "$actual_arch" != "$expected_arch" ]; then
+            echo "::error::$deb declares Architecture: $actual_arch, expected $expected_arch"
+            exit 1
+          fi
+
+          if [ "${{ matrix.layout }}" = "rootless" ]; then
+            if ! dpkg-deb -c "$deb" | grep -q 'var/jb/etc/sudoers.d/theosstudio$'; then
+              echo "::error::rootless package is missing its TheosStudio sudo policy"
+              exit 1
+            fi
+            tmpdir=$(mktemp -d)
+            trap 'rm -rf "$tmpdir"' EXIT
+            dpkg-deb -x "$deb" "$tmpdir"
+            policy="$tmpdir/var/jb/etc/sudoers.d/theosstudio"
+            test -f "$policy" || { echo "::error::sudo policy was not extracted"; exit 1; }
+            grep -q '^mobile ALL=(root) NOPASSWD:' "$policy" || {
+              echo "::error::TheosStudio sudo policy does not grant scoped passwordless commands"
+              exit 1
+            }
+            grep -q '/var/jb/usr/bin/apt-get' "$policy" || {
+              echo "::error::TheosStudio sudo policy does not cover apt-get"
+              exit 1
+            }
+          fi
+          echo "OK: $deb ($actual_arch)"
+
+      - name: Upload the .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: theosstudio-deb-${{ matrix.layout }}
+          path: dist/*.deb
+          if-no-files-found: error
+          retention-days: 14
+; then
+            echo "::error::$deb does not contain the bundled Theos toolchain"
             exit 1
           fi
 
