@@ -34,6 +34,18 @@ struct CodeEditorView: View {
                     .padding(.horizontal)
                     .padding(.vertical, 6)
             }
+            HStack(spacing: 8) {
+                StudioPill(text: languageName, systemImage: "chevron.left.forwardslash.chevron.right", tint: .indigo)
+                StudioPill(text: isModified ? "Modified" : "Saved", systemImage: isModified ? "circle.fill" : "checkmark.circle.fill", tint: isModified ? .orange : .green)
+                Spacer()
+                Text("\(text.split(separator: "\n", omittingEmptySubsequences: false).count) lines")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(.secondarySystemGroupedBackground))
+
             CodeTextView(
                 text: $text,
                 language: language,
