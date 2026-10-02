@@ -14,6 +14,8 @@ struct AgentEnvironment {
     var appStatus: () -> String
     var listProjects: () -> String
     var refreshToolchain: () -> String
+    var dependencyStatus: () -> String
+    var installDependencies: @MainActor (Bool) async -> (Bool, String)
     var listFiles: () -> [ProjectEntry]
     var readFile: (String) -> String?
     var writeFile: (String, String) throws -> Void
@@ -100,6 +102,15 @@ enum AgentExecutor {
 
         case .refreshToolchain:
             return .immediate(environment.refreshToolchain())
+
+        case .dependencyStatus:
+            return .immediate(environment.dependencyStatus())
+
+        case .installDependencies(let updateFirst):
+            return .approval(Plan(diff: nil) {
+                let (ok, message) = await environment.installDependencies(updateFirst)
+                return ok ? message : "Error: \(message)"
+            })
 
         case .listFiles:
             let entries = environment.listFiles()
