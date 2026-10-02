@@ -65,6 +65,12 @@ public struct InstallStep: Equatable, Sendable {
     }
 }
 
+/// How writes to the selected Theos destination must be performed.
+public enum InstallDestinationAccess: Equatable, Sendable {
+    case userWritable
+    case privileged
+}
+
 /// What an installation is for.
 ///
 /// Separate entry points because the three parts fail for different reasons and
@@ -81,11 +87,10 @@ public enum InstallScope: String, CaseIterable, Sendable {
 }
 
 public struct TheosInstallOptions: Equatable, Sendable {
-    /// Where Theos goes. A path the app can write: installing Theos into the
-    /// bootstrap needs root, and Theos explicitly refuses to be installed or run
-    /// as root, so a directory in the app's own document folder is the right
-    /// answer, not a compromise.
+    /// Where Theos goes. Bootstrap-owned destinations may require privileged
+    /// filesystem operations; builds still run as the normal app user.
     public var destination: String
+    public var destinationAccess: InstallDestinationAccess
     public var scope: InstallScope
     /// Resolved from the GitHub API by the caller; the plan only places it.
     public var sdkAsset: SDKAsset?
@@ -94,14 +99,20 @@ public struct TheosInstallOptions: Equatable, Sendable {
 
     public init(
         destination: String,
+        destinationAccess: InstallDestinationAccess? = nil,
         scope: InstallScope = .theosAndSDK,
         sdkAsset: SDKAsset? = nil,
         procursus: Bool = false
     ) {
         self.destination = destination
+        self.destinationAccess = destinationAccess ?? Self.access(for: destination)
         self.scope = scope
         self.sdkAsset = sdkAsset
         self.procursus = procursus
+    }
+
+    public static func access(for destination: String) -> InstallDestinationAccess {
+        destination == "/var/jb" || destination.hasPrefix("/var/jb/") ? .privileged : .userWritable
     }
 }
 
@@ -158,7 +169,7 @@ public enum SDKFetchError: LocalizedError {
         case .noAssets:
             return "The theos/sdks release has no iPhoneOS SDK asset."
         case .malformed:
-            return "The response was not a model list this app can read. It expects {\"data\":[{\"id\": …}]}, which is what the OpenAI protocol specifies."
+            return "The GitHub release response for theos/sdks is malformed or missing its assets array."
         }
     }
 }
@@ -167,9 +178,8 @@ public enum SDKFetchError: LocalizedError {
 ///
 /// This mirrors what the official installer does on a jailbroken device, split
 /// along the lines that actually matter: the *dependencies* come from the package
-/// manager and need root; Theos and its SDK are files in a folder and do not; and
-/// the SDK does not care whether the checkout is healthy, so one button fetches
-/// it on its own.
+/// manager and need root. Theos and SDK filesystem operations use the access
+/// policy of their destination, so bootstrap-owned paths are handled explicitly.
 public enum TheosInstaller {
 
     public static let repository = "https://github.com/theos/theos.git"
@@ -202,13 +212,14 @@ public enum TheosInstaller {
             theosSteps(
                 builder,
                 destination: options.destination,
+                destinationAccess: options.destinationAccess,
                 privileges: privileges,
                 exists: exists,
                 listDirectory: listDirectory
             )
         }
         if options.scope == .theosAndSDK || options.scope == .sdkOnly {
-            sdkSteps(builder, destination: options.destination, asset: options.sdkAsset, privileges: privileges)
+            sdkSteps(builder, destination: options.destination, destinationAccess: options.destinationAccess, scope: options.scope, asset: options.sdkAsset, privileges: privileges, exists: exists)
         }
 
         return TheosInstallPlan(
@@ -251,12 +262,13 @@ public enum TheosInstaller {
     private static func theosSteps(
         _ builder: InstallPlanBuilder,
         destination: String,
+        destinationAccess: InstallDestinationAccess,
         privileges: PrivilegeContext,
         exists: (String) -> Bool,
         listDirectory: (String) -> [String]
     ) {
         let makefiles = destination + "/makefiles/common.mk"
-        let needsRoot = destination == "/var/jb" || destination.hasPrefix("/var/jb/")
+        let needsRoot = destinationAccess == .privileged
         if needsRoot && !privileges.canEscalate {
             builder.warn("\(destination) is inside the Dopamine bootstrap and needs root. Install passwordless sudo or run TheosStudio as root, then retry.")
             return
@@ -313,12 +325,19 @@ public enum TheosInstaller {
     private static func sdkSteps(
         _ builder: InstallPlanBuilder,
         destination: String,
+        destinationAccess: InstallDestinationAccess,
+        scope: InstallScope,
         asset: SDKAsset?,
-        privileges: PrivilegeContext
+        privileges: PrivilegeContext,
+        exists: (String) -> Bool
     ) {
-        let needsRoot = destination == "/var/jb" || destination.hasPrefix("/var/jb/")
+        let needsRoot = destinationAccess == .privileged
         if needsRoot && !privileges.canEscalate {
             builder.warn("\(destination) is inside the Dopamine bootstrap and the SDK install needs root. Install passwordless sudo or run TheosStudio as root, then retry.")
+            return
+        }
+        if scope == .sdkOnly && !exists(destination + "/makefiles/common.mk") {
+            builder.warn("\(destination) is not a valid Theos checkout (makefiles/common.mk is missing), so an SDK-only install would not produce a usable toolchain.")
             return
         }
         guard let asset else {
@@ -343,6 +362,7 @@ public enum TheosInstaller {
         builder.add(InstallStep(
             label: "Download \(asset.name) (\(asset.version))",
             kind: .download(url: asset.url, to: archive),
+            requiresRoot: needsRoot,
             skipIfExists: installed,
             note: "A patched SDK from theos/sdks, the same release the official installer uses."
         ))
