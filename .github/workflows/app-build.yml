@@ -86,11 +86,62 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build
 
+      - name: Bundle Theos into the app
+        run: |
+          set -euo pipefail
+          THEOS_DIR="$APP_BUNDLE_PATH/Theos"
+          rm -rf "$THEOS_DIR"
+          git clone --depth 1 --recursive https://github.com/theos/theos.git "$THEOS_DIR"
+          # Git metadata has no runtime value and would substantially inflate the package.
+          find "$THEOS_DIR" -name .git -type d -prune -exec rm -rf {} +
+          test -f "$THEOS_DIR/makefiles/common.mk" || {
+            echo "::error::bundled Theos is missing makefiles/common.mk"
+            exit 1
+          }
+          echo "Bundled Theos: $(du -sh "$THEOS_DIR" | awk '{print $1}')"
+
+      - name: Bundle patched iOS SDK
+        run: |
+          set -euo pipefail
+          SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS16.5.sdk.tar.xz"
+          curl --fail --location --retry 3 "$SDK_URL" -o "$RUNNER_TEMP/iPhoneOS16.5.sdk.tar.xz"
+          mkdir -p "$APP_BUNDLE_PATH/Theos/sdks"
+          tar -xJf "$RUNNER_TEMP/iPhoneOS16.5.sdk.tar.xz" -C "$APP_BUNDLE_PATH/Theos/sdks"
+          test -d "$APP_BUNDLE_PATH/Theos/sdks/iPhoneOS16.5.sdk" || {
+            echo "::error::iPhoneOS16.5.sdk was not bundled"
+            exit 1
+          }
+
+      - name: Bundle on-device build support
+        run: |
+          set -euo pipefail
+          # Theos itself carries Logos, NIC, dm.pl and its make infrastructure.
+          # Keep a stable app-local bin directory first on PATH for helper tools
+          # we can ship ourselves; jailbreak-provided clang/make/perl/dpkg remain
+          # compatible fallbacks when a redistributable iOS binary is unavailable.
+          mkdir -p "$APP_BUNDLE_PATH/Toolchain/bin"
+          cat > "$APP_BUNDLE_PATH/Toolchain/manifest.txt" <<'EOF'
+          Theos=embedded
+          SDK=iPhoneOS16.5
+          Logos=embedded-with-Theos
+          NIC=embedded-with-Theos
+          dm.pl=embedded-with-Theos
+          EOF
+          test -f "$APP_BUNDLE_PATH/Theos/vendor/dm.pl/dm.pl" || {
+            echo "::error::Theos dm.pl vendor component is missing"
+            exit 1
+          }
+
       - name: Verify the app bundle
         run: |
           set -euo pipefail
           test -d "$APP_BUNDLE_PATH" || { echo "::error::$APP_BUNDLE_PATH was not produced"; exit 1; }
           test -x "$APP_BUNDLE_PATH/TheosStudio" || { echo "::error::$APP_BUNDLE_PATH/TheosStudio is missing or not executable"; exit 1; }
+          test -f "$APP_BUNDLE_PATH/Assets.car" || { echo "::error::asset catalog was not compiled into the app"; exit 1; }
+          test -f "$APP_BUNDLE_PATH/Theos/makefiles/common.mk" || { echo "::error::bundled Theos is missing"; exit 1; }
+          test -d "$APP_BUNDLE_PATH/Theos/sdks/iPhoneOS16.5.sdk" || { echo "::error::bundled SDK is missing"; exit 1; }
+          test -f "$APP_BUNDLE_PATH/Theos/vendor/dm.pl/dm.pl" || { echo "::error::bundled dm.pl is missing"; exit 1; }
+          test -f "$APP_BUNDLE_PATH/Toolchain/manifest.txt" || { echo "::error::toolchain manifest is missing"; exit 1; }
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_BUNDLE_PATH/Info.plist"
           /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP_BUNDLE_PATH/Info.plist"
           lipo -info "$APP_BUNDLE_PATH/TheosStudio"
@@ -176,12 +227,25 @@ jobs:
           fi
           echo "inspecting $deb"
           dpkg-deb -I "$deb"
-          dpkg-deb -c "$deb"
 
-          if ! dpkg-deb -c "$deb" | grep -E 'Applications/TheosStudio\.app/TheosStudio$'; then
+          listing=$(dpkg-deb -c "$deb")
+          printf '%s\n' "$listing"
+          printf '%s\n' "$listing" | grep -E 'Applications/TheosStudio\.app/TheosStudio$' >/dev/null || {
             echo "::error::$deb does not contain Applications/TheosStudio.app/TheosStudio"
             exit 1
-          fi
+          }
+          printf '%s\n' "$listing" | grep -E 'Applications/TheosStudio\.app/Theos/makefiles/common\.mk$' >/dev/null || {
+            echo "::error::$deb does not contain bundled Theos"
+            exit 1
+          }
+          printf '%s\n' "$listing" | grep -E 'Applications/TheosStudio\.app/Theos/sdks/iPhoneOS16\.5\.sdk/' >/dev/null || {
+            echo "::error::$deb does not contain the bundled SDK"
+            exit 1
+          }
+          printf '%s\n' "$listing" | grep -E 'Applications/TheosStudio\.app/Theos/vendor/dm\.pl/dm\.pl$' >/dev/null || {
+            echo "::error::$deb does not contain dm.pl"
+            exit 1
+          }
 
           expected_arch=$([ "${{ matrix.layout }}" = "rootless" ] && echo iphoneos-arm64 || echo iphoneos-arm)
           actual_arch=$(dpkg-deb -f "$deb" Architecture)
@@ -191,10 +255,10 @@ jobs:
           fi
 
           if [ "${{ matrix.layout }}" = "rootless" ]; then
-            if ! dpkg-deb -c "$deb" | grep -q 'var/jb/etc/sudoers.d/theosstudio$'; then
+            printf '%s\n' "$listing" | grep -q 'var/jb/etc/sudoers.d/theosstudio$' || {
               echo "::error::rootless package is missing its TheosStudio sudo policy"
               exit 1
-            fi
+            }
             tmpdir=$(mktemp -d)
             trap 'rm -rf "$tmpdir"' EXIT
             dpkg-deb -x "$deb" "$tmpdir"

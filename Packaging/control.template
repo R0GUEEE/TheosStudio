@@ -5,17 +5,15 @@ Architecture: @ARCH@
 Section: Development
 Priority: optional
 Maintainer: r0gueee <r0gueee@users.noreply.github.com>
-Depends: firmware (>= 15.0)
-Recommends: theos
-Description: Build Theos tweaks on the device
- Projects, a Logos editor, and a build, package and install pipeline driven by
- the Theos the device already has.
+Depends: firmware (>= 15.0), bash, clang, coreutils, curl, git, grep, ldid, make, perl, rsync, xz-utils
+Description: Self-contained on-device Theos development environment
+ Projects, a Logos editor, a bundled Theos checkout and patched iOS SDK, plus
+ the native compiler/build utilities required to build, package and install
+ tweaks on a jailbroken device.
  .
- TheosStudio does not ship a compiler: it runs the make, clang, ldid and
- dpkg-deb that the jailbreak already has, shows their output, lifts the
- compiler's errors and warnings out of the log, and installs the .deb the build
- produces. The Toolchain tab names anything that is missing and the command that
- installs it.
+ Native executables are declared as package dependencies so the jailbreak's
+ package manager installs ABI-compatible builds for its bootstrap. The app
+ prefers its bundled Theos and SDK while exposing the bootstrap tools on PATH.
  .
  Packages install to /var/jb/Applications on a rootless jailbreak and to
  /Applications on a rootful one.

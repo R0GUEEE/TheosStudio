@@ -26,12 +26,14 @@ public enum AgentPolicy {
     /// unknown is treated as a write — the cautious answer.
     public static func access(for action: AgentAction) -> AgentAccess {
         switch action {
-        case .appStatus, .listProjects, .refreshToolchain, .listFiles, .readFile, .readCrashes, .gitStatus, .gitDiff, .searchHeaders, .finish:
+        case .appStatus, .listProjects, .refreshToolchain, .dependencyStatus, .listFiles, .readFile, .readCrashes, .gitStatus, .gitDiff, .searchHeaders, .finish:
             return .read
         case .writeFile, .replaceInFile, .updateControl:
             return .write
         case .build:
             return .build
+        case .installDependencies:
+            return .install
         case .install:
             return .install
         case .unknown:
@@ -103,7 +105,7 @@ public enum AgentPolicy {
     /// The rules that hold whatever the settings say.
     static func decideSandbox(_ action: AgentAction, privilegesCanEscalate: Bool) -> AgentDecision {
         switch action {
-        case .appStatus, .listProjects, .refreshToolchain, .listFiles, .finish, .readCrashes, .gitStatus, .searchHeaders:
+        case .appStatus, .listProjects, .refreshToolchain, .dependencyStatus, .listFiles, .finish, .readCrashes, .gitStatus, .searchHeaders:
             return .allowed
 
         case .gitDiff(let path):
@@ -149,6 +151,12 @@ public enum AgentPolicy {
 
         case .build:
             return .needsApproval(reason: "Run make in the project")
+
+        case .installDependencies:
+            guard privilegesCanEscalate else {
+                return .refused(reason: "Installing dependencies needs root or passwordless sudo. Install them from Sileo or a root shell, then run dependency_status again.")
+            }
+            return .needsApproval(reason: "Install missing dependency packages with apt-get")
 
         case .install:
             let note = privilegesCanEscalate

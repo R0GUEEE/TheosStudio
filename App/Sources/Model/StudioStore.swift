@@ -123,9 +123,22 @@ final class StudioStore: ObservableObject {
 
     func refreshToolchain() {
         let override = settings.theosPathOverride.trimmingCharacters(in: .whitespaces)
+        // A packaged Theos is the zero-setup default. An explicit user override
+        // still wins; if this build does not contain Theos, normal jailbreak and
+        // home-directory discovery remains unchanged.
+        let bundledTheos = Bundle.main.resourceURL?
+            .appendingPathComponent("Theos", isDirectory: true).path
+        let preferredTheos: String?
+        if !override.isEmpty {
+            preferredTheos = override
+        } else if let bundledTheos, FS.fileExists(bundledTheos + "/makefiles/common.mk") {
+            preferredTheos = bundledTheos
+        } else {
+            preferredTheos = nil
+        }
         toolchain = TheosLocator.report(
             home: NSHomeDirectory(),
-            override: override.isEmpty ? nil : override,
+            override: preferredTheos,
             jailbreak: jailbreak,
             base: ProcessInfo.processInfo.environment,
             exists: FS.fileExists,
@@ -213,6 +226,11 @@ final class StudioStore: ObservableObject {
     func commandEnvironment() -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
         var pathComponents: [String] = []
+        if let bundledBin = Bundle.main.resourceURL?
+            .appendingPathComponent("Toolchain/bin", isDirectory: true).path,
+           FS.directoryExists(bundledBin) {
+            pathComponents.append(bundledBin)
+        }
         if let toolchain {
             pathComponents += toolchain.binDirectories
             if let root = toolchain.theosRoot {
@@ -240,9 +258,15 @@ final class StudioStore: ObservableObject {
         guard let toolchain, let root = toolchain.theosRoot else {
             return ProcessInfo.processInfo.environment
         }
+        var bins = toolchain.binDirectories
+        if let bundledBin = Bundle.main.resourceURL?
+            .appendingPathComponent("Toolchain/bin", isDirectory: true).path,
+           FS.directoryExists(bundledBin) {
+            bins.insert(bundledBin, at: 0)
+        }
         return TheosLocator.environment(
             theosRoot: root,
-            binDirectories: toolchain.binDirectories,
+            binDirectories: bins,
             base: ProcessInfo.processInfo.environment,
             home: NSHomeDirectory()
         )

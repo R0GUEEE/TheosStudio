@@ -18,6 +18,7 @@ struct ProjectDetailView: View {
     @State private var toolOutcome: ProjectFileEditor.Outcome?
     @State private var testFlow: String?
     @State private var pluginRequest: ProjectPluginRunRequest?
+    @State private var filesExpanded = true
 
     init(store: StudioStore, project: Project) {
         _store = ObservedObject(wrappedValue: store)
@@ -230,58 +231,69 @@ struct ProjectDetailView: View {
 
     private var filesSection: some View {
         Section {
-            ForEach(files, id: \.relativePath) { entry in
-                if entry.relativePath == "control" {
-                    // The one file where a typo costs an install that does
-                    // nothing gets a form instead of a text field.
-                    NavigationLink(destination: ControlEditorView(
-                        path: current.path + "/" + entry.relativePath,
-                        kind: current.kind,
-                        projectName: current.name
-                    )) {
-                        FileRow(entry: entry)
-                    }
-                } else if entry.isProbablyText {
-                    NavigationLink(destination: CodeEditorView(
-                        path: current.path + "/" + entry.relativePath,
-                        fontSize: CGFloat(store.settings.editorFontSize)
-                    )) {
-                        FileRow(entry: entry)
-                    }
-                    .contextMenu {
-                        fileContextMenu(for: entry)
-                    }
-                } else {
-                    HStack {
-                        FileRow(entry: entry)
-                        Button {
-                            UIApplication.shared.share(URL(fileURLWithPath: current.path + "/" + entry.relativePath))
-                        } label: {
-                            Image(systemName: "square.and.arrow.up")
+            if filesExpanded {
+                ForEach(files, id: \.relativePath) { entry in
+                    if entry.relativePath == "control" {
+                        NavigationLink(destination: ControlEditorView(
+                            path: current.path + "/" + entry.relativePath,
+                            kind: current.kind,
+                            projectName: current.name
+                        )) {
+                            FileRow(entry: entry)
                         }
-                        .buttonStyle(.borderless)
+                    } else if entry.isProbablyText {
+                        NavigationLink(destination: CodeEditorView(
+                            path: current.path + "/" + entry.relativePath,
+                            fontSize: CGFloat(store.settings.editorFontSize)
+                        )) {
+                            FileRow(entry: entry)
+                        }
+                        .contextMenu { fileContextMenu(for: entry) }
+                    } else {
+                        HStack {
+                            FileRow(entry: entry)
+                            Button {
+                                UIApplication.shared.share(URL(fileURLWithPath: current.path + "/" + entry.relativePath))
+                            } label: {
+                                Image(systemName: "square.and.arrow.up")
+                            }
+                            .buttonStyle(.borderless)
+                        }
                     }
                 }
-            }
-            if files.isEmpty {
-                Text("No files found. Rescan from the project list.")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
+                if files.isEmpty {
+                    Text("No files found. Rescan from the project list.")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
             }
         } header: {
             HStack {
-                Text("Files")
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) { filesExpanded.toggle() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: filesExpanded ? "chevron.down" : "chevron.right")
+                            .font(.caption.weight(.semibold))
+                        Text("Files")
+                        Text("\(files.count)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
                 Spacer()
                 Button {
                     isCreatingFile = true
                 } label: {
-                    Label("New file", systemImage: "plus")
-                        .labelStyle(.iconOnly)
+                    Label("New file", systemImage: "plus").labelStyle(.iconOnly)
                 }
                 .buttonStyle(.borderless)
             }
         } footer: {
-            Text("Editing is plain text with syntax colouring. Creating or renaming a source file updates the Makefile's file list, because a source that is not listed there is never compiled.")
+            if filesExpanded {
+                Text("Editing is plain text with syntax colouring. Creating or renaming a source file updates the Makefile's file list, because a source that is not listed there is never compiled.")
+            }
         }
     }
 
@@ -328,26 +340,45 @@ struct ProjectDetailView: View {
 
     private var buildSection: some View {
         Section {
+            // These details come from the package itself rather than a generic
+            // build menu, so imported projects get the same useful controls as
+            // projects created by TheosStudio.
+            DetailRow(label: "Target", value: buildTargetName, monospaced: true)
+            if !makefileSources.isEmpty {
+                DetailRow(label: "Sources", value: "\(makefileSources.count)")
+            }
+            if let archs = makefileValue("ARCHS"), !archs.isEmpty {
+                DetailRow(label: "Architectures", value: archs, monospaced: true)
+            }
+            if let target = makefileValue("TARGET"), !target.isEmpty {
+                DetailRow(label: "SDK target", value: target, monospaced: true)
+            }
+            if let processes = makefileValue("INSTALL_TARGET_PROCESSES"), !processes.isEmpty {
+                DetailRow(label: "Restart after install", value: processes, monospaced: true)
+            }
+
             Button {
                 installAfterBuild = false
                 runner.build(project: current, store: store)
             } label: {
-                Label("Build package", systemImage: "hammer")
+                Label("Build \(buildTargetLabel)", systemImage: buildTargetIcon)
             }
             .disabled(runner.phase.isRunning)
 
-            Button {
-                installAfterBuild = true
-                runner.build(project: current, store: store)
-            } label: {
-                Label("Build and install", systemImage: "arrow.down.circle")
+            if packageCanInstall {
+                Button {
+                    installAfterBuild = true
+                    runner.build(project: current, store: store)
+                } label: {
+                    Label("Build & install \(buildTargetLabel)", systemImage: "arrow.down.circle")
+                }
+                .disabled(runner.phase.isRunning)
             }
-            .disabled(runner.phase.isRunning)
 
             Button {
                 runner.build(project: current, store: store, cleanOnly: true)
             } label: {
-                Label("Clean build products", systemImage: "trash")
+                Label("Clean \(buildTargetLabel) products", systemImage: "trash")
             }
             .disabled(runner.phase.isRunning)
 
@@ -371,10 +402,43 @@ struct ProjectDetailView: View {
                 }
             }
         } header: {
-            Text("Build")
+            Text("Build · \(buildTargetName)")
         } footer: {
             Text(buildFooter)
         }
+    }
+
+    private var projectMakefile: String {
+        FS.read(current.path + "/Makefile") ?? ""
+    }
+
+    private func makefileValue(_ name: String) -> String? {
+        MakefileEditor.readValue(name, in: projectMakefile)
+    }
+
+    private var buildTargetName: String {
+        current.kind?.displayName ?? "Theos Package"
+    }
+
+    private var buildTargetLabel: String {
+        switch current.kind {
+        case .tweak, .tweakWithPreferences: return "tweak"
+        case .preferenceBundle: return "preference bundle"
+        case .application: return "application"
+        case .tool: return "command-line tool"
+        case nil: return "package"
+        }
+    }
+
+    private var buildTargetIcon: String {
+        current.kind?.systemImage ?? "hammer"
+    }
+
+    private var packageCanInstall: Bool {
+        // Every supported Theos target is packaged as a Debian package. Keeping
+        // this derived from the detected kind leaves room for non-package build
+        // targets without hard-coding another menu later.
+        current.kind != nil || ControlFile.parse(FS.read(current.path + "/control") ?? "").packageIdentifier != nil
     }
 
     private var buildFooter: String {

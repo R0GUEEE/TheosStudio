@@ -7,6 +7,8 @@ public enum AgentAction: Equatable, Sendable {
     case appStatus
     case listProjects
     case refreshToolchain
+    case dependencyStatus
+    case installDependencies(updateFirst: Bool)
     case listFiles
     case readFile(path: String)
     case writeFile(path: String, contents: String)
@@ -33,6 +35,8 @@ public enum AgentAction: Equatable, Sendable {
         case .appStatus: return "app_status"
         case .listProjects: return "list_projects"
         case .refreshToolchain: return "refresh_toolchain"
+        case .dependencyStatus: return "dependency_status"
+        case .installDependencies: return "install_dependencies"
         case .listFiles: return "list_files"
         case .readFile: return "read_file"
         case .writeFile: return "write_file"
@@ -58,6 +62,10 @@ public enum AgentAction: Equatable, Sendable {
             return "List projects known to TheosStudio"
         case .refreshToolchain:
             return "Rescan the Theos toolchain"
+        case .dependencyStatus:
+            return "Audit project and toolchain dependencies"
+        case .installDependencies(let updateFirst):
+            return "Install missing dependencies" + (updateFirst ? " (refresh package indexes first)" : "")
         case .listFiles:
             return "List the project's files"
         case .readFile(let path):
@@ -117,6 +125,12 @@ public enum AgentActionParser {
 
         case "refresh_toolchain":
             return .refreshToolchain
+
+        case "dependency_status":
+            return .dependencyStatus
+
+        case "install_dependencies":
+            return .installDependencies(updateFirst: flag("update_first", default: false))
 
         case "list_files":
             return .listFiles
@@ -217,6 +231,19 @@ public enum AgentToolCatalog {
             name: "refresh_toolchain",
             description: "Rescan Theos, SDKs and required build tools, then return the current app/toolchain status.",
             parameters: .schema(properties: [:], required: [])
+        ),
+        AgentTool(
+            name: "dependency_status",
+            description: "Audit the selected project dependencies and Theos toolchain. Return exactly what is missing before a build or install.",
+            parameters: .schema(properties: [:], required: [])
+        ),
+        AgentTool(
+            name: "install_dependencies",
+            description: "Install missing project and toolchain dependency packages with the device package manager, then rescan. Requires root or passwordless sudo and user approval.",
+            parameters: .schema(
+                properties: ["update_first": .property("boolean", "Run apt-get update before installing. Defaults to false.")],
+                required: []
+            )
         ),
         AgentTool(
             name: "list_files",

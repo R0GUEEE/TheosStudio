@@ -366,6 +366,8 @@ struct AssistantView: View {
                 store.refreshToolchain()
                 return agentAppStatus()
             },
+            dependencyStatus: { dependencyStatus(project: project) },
+            installDependencies: { updateFirst in await installDependencies(updateFirst: updateFirst) },
             listFiles: { FS.projectEntries(at: path, depth: 5) },
             readFile: { FS.read(path + "/" + $0) },
             writeFile: { relative, contents in try FS.write(contents, to: path + "/" + relative) },
@@ -390,6 +392,67 @@ struct AssistantView: View {
         )
     }
 
+
+    private func dependencyStatus(project: Project) -> String {
+        let control = ControlFile.parse(FS.read(project.path + "/control") ?? "")
+        var lines: [String] = []
+        if let depends = control["Depends"], !depends.isEmpty {
+            lines.append("Project Depends: " + depends)
+        } else {
+            lines.append("Project Depends: none declared")
+        }
+        if let preDepends = control["Pre-Depends"], !preDepends.isEmpty {
+            lines.append("Project Pre-Depends: " + preDepends)
+        }
+        if let report = store.toolchain {
+            if report.missingPackages.isEmpty {
+                lines.append("Toolchain packages: satisfied")
+            } else {
+                lines.append("Missing toolchain packages: " + report.missingPackages.joined(separator: ", "))
+                lines.append("Install command: " + report.installCommand)
+            }
+        } else {
+            lines.append("Toolchain: not scanned; run refresh_toolchain first")
+        }
+        lines.append("Privileges: " + store.privileges.summary)
+        return lines.joined(separator: "\n")
+    }
+
+    private func installDependencies(updateFirst: Bool) async -> (Bool, String) {
+        guard store.privileges.canEscalate else {
+            return (false, "Dependency installation needs root or passwordless sudo. Use the Toolchain screen to copy the exact command for a root shell.")
+        }
+        guard let report = store.toolchain else {
+            store.refreshToolchain()
+            return (false, "Toolchain was not scanned yet. It has been rescanned; run dependency_status and retry.")
+        }
+        guard !report.missingPackages.isEmpty else {
+            return (true, "Every required Theos toolchain package is already installed.")
+        }
+
+        // The existing installer owns package-manager execution, privilege
+        // wrapping and PATH repair. Reuse it so agent installs behave exactly
+        // like the Toolchain screen rather than growing a second apt runner.
+        let dependencyInstaller = TheosInstallRunner()
+        let destination = report.theosRoot ?? (store.jailbreak.rootlessPrefix != nil ? "/var/jb/opt/theos" : Paths.documents + "/Theos")
+        dependencyInstaller.start(store: store, destination: destination, scope: .dependenciesOnly)
+        while dependencyInstaller.phase.isRunning {
+            try? await Task.sleep(nanoseconds: 150_000_000)
+        }
+
+        switch dependencyInstaller.phase {
+        case .finished(let message):
+            store.refreshToolchain()
+            let prefix = updateFirst ? "Package indexes were not forcibly refreshed; apt resolved against the configured indexes. " : ""
+            return (true, prefix + message)
+        case .failed(let message):
+            return (false, message + "\n" + dependencyInstaller.log.suffix(20).joined(separator: "\n"))
+        case .cancelled:
+            return (false, "Dependency installation was cancelled.")
+        default:
+            return (false, "Dependency installer stopped before completing.")
+        }
+    }
 
     private func agentAppStatus() -> String {
         var lines = [
@@ -428,7 +491,20 @@ struct AssistantView: View {
     /// shows the same output — and waits for it, because the assistant needs the
     /// diagnostics as a value.
     private func runBuild(project: Project, clean: Bool, final: Bool) async -> BuildRunner.Outcome {
-        await withCheckedContinuation { continuation in
+        // Agent builds are self-healing for toolchain dependencies: if the scan
+        // already knows required packages are absent and this app can escalate,
+        // repair that state first, rescan, then build once. Source/compiler
+        // failures are never retried blindly.
+        if let report = store.toolchain,
+           !report.missingPackages.isEmpty,
+           store.privileges.canEscalate {
+            let repaired = await installDependencies(updateFirst: false)
+            if repaired.0 {
+                store.refreshToolchain()
+            }
+        }
+
+        return await withCheckedContinuation { continuation in
             var resumed = false
             runner.onOutcome = { outcome in
                 guard !resumed else { return }

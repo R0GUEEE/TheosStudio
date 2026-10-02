@@ -108,6 +108,10 @@ APP_REL="${INSTALL_PREFIX:+$INSTALL_PREFIX/}Applications/TheosStudio.app"
 [ -f "$APP_PATH/Info.plist" ] || die "'$APP_PATH' does not look like an app bundle (no Info.plist)"
 [ -f "$APP_PATH/TheosStudio" ] || die "'$APP_PATH/TheosStudio' is missing; the package must contain Applications/TheosStudio.app/TheosStudio"
 [ -x "$APP_PATH/TheosStudio" ] || die "'$APP_PATH/TheosStudio' is not executable; check the build output"
+[ -f "$APP_PATH/Theos/makefiles/common.mk" ] || die "'$APP_PATH/Theos' is missing; release packages must include the bundled Theos toolchain"
+[ -d "$APP_PATH/Theos/sdks/iPhoneOS16.5.sdk" ] || die "'$APP_PATH/Theos/sdks/iPhoneOS16.5.sdk' is missing; release packages must include the bundled SDK"
+[ -f "$APP_PATH/Theos/vendor/dm.pl/dm.pl" ] || die "'$APP_PATH/Theos/vendor/dm.pl/dm.pl' is missing; release packages must include dm.pl"
+[ -f "$APP_PATH/Toolchain/manifest.txt" ] || die "'$APP_PATH/Toolchain/manifest.txt' is missing; release packages must include the toolchain manifest"
 
 CONTROL_TEMPLATE="$REPO_ROOT/Packaging/control.template"
 [ -f "$CONTROL_TEMPLATE" ] || die "control template not found at '$CONTROL_TEMPLATE'"
@@ -238,62 +242,50 @@ if [ "$has_installed_size" = "0" ]; then
     printf 'Installed-Size: %s\n' "$installed_size" >> "$STAGE/DEBIAN/control"
 fi
 
-# ------------------------------------------------------------------ signing --
-
-# Order matters. The signature covers the whole Mach-O, so it must be written
-# after every byte of the binary is final: after the copy, after the xattr
-# cleanup, and after the permissions below. Nothing may touch the app after this
-# block. If you change anything, re-sign (that is what the comment below means
-# by "re-sign after any change").
-ENTITLEMENTS="$REPO_ROOT/App/TheosStudio.entitlements"
-if command -v ldid >/dev/null 2>&1; then
-    # An old signature is invalid the moment the file is copied, and some ldid
-    # builds refuse to overwrite one, so drop it first.
-    rm -rf "$STAGE/$APP_REL/_CodeSignature"
-    if [ -f "$ENTITLEMENTS" ]; then
-        ldid -S"$ENTITLEMENTS" "$STAGE/$APP_REL/TheosStudio" \
-            || die "ldid failed to sign with $ENTITLEMENTS"
-        note "signed TheosStudio with $(basename -- "$ENTITLEMENTS")"
-    else
-        note "warning: $ENTITLEMENTS not found; signing without entitlements"
-        ldid -S "$STAGE/$APP_REL/TheosStudio" || die "ldid failed to sign the binary"
-    fi
-else
-    note "warning: ldid not found; shipping an unsigned binary (install it: brew install ldid)"
-fi
-
 # -------------------------------------------------------------- permissions --
-
-# Directories and things that were already executable become 0755, everything
-# else becomes 0644. Doing it by permission rather than by name keeps helper
-# binaries and frameworks inside the bundle working.
 find "$STAGE/$APP_REL" -type d -exec chmod 0755 {} \;
 find "$STAGE/$APP_REL" -type f -perm -u+x -exec chmod 0755 {} \;
 find "$STAGE/$APP_REL" -type f ! -perm -u+x -exec chmod 0644 {} \;
-chmod 0755 "$STAGE/$APP_REL"
-chmod 0755 "$STAGE"
-chmod 0755 "$STAGE/DEBIAN"
+chmod 0755 "$STAGE/$APP_REL/TheosStudio"
+find "$STAGE/$APP_REL/Theos/bin" "$STAGE/$APP_REL/Theos/vendor" -type f \( -name '*.pl' -o -name '*.py' -o -name '*.sh' \) -exec chmod 0755 {} \; 2>/dev/null || true
+[ -f "$STAGE/$APP_REL/Theos/vendor/dm.pl/dm.pl" ] && chmod 0755 "$STAGE/$APP_REL/Theos/vendor/dm.pl/dm.pl"
+chmod 0755 "$STAGE/$APP_REL" "$STAGE" "$STAGE/DEBIAN"
 chmod 0644 "$STAGE/DEBIAN/control"
-if [ "$LAYOUT" = "rootless" ]; then
-    chmod 0440 "$STAGE/$SUDOERS_REL"
-fi
+if [ "$LAYOUT" = "rootless" ]; then chmod 0440 "$STAGE/$SUDOERS_REL"; fi
 
-# root:wheel is what MobileSubstrate/Installer expect for an app bundle, and
-# `--root-owner-group` reproduces it when the build is not running as root (CI).
-if [ "$(id -u)" = "0" ]; then
-    chown -R 0:0 "$STAGE" || note "warning: chown failed; the package may carry the wrong owner"
+cat > "$STAGE/DEBIAN/postinst" <<POSTINST
+#!/bin/sh
+set -e
+APP="/$APP_REL"
+chmod 0755 "\$APP" "\$APP/TheosStudio" 2>/dev/null || true
+if [ -x /var/jb/usr/bin/uicache ]; then
+    /var/jb/usr/bin/uicache -p "\$APP" >/dev/null 2>&1 || /var/jb/usr/bin/uicache -a >/dev/null 2>&1 || true
+elif [ -x /usr/bin/uicache ]; then
+    /usr/bin/uicache -p "\$APP" >/dev/null 2>&1 || /usr/bin/uicache -a >/dev/null 2>&1 || true
+fi
+exit 0
+POSTINST
+chmod 0755 "$STAGE/DEBIAN/postinst"
+
+# ------------------------------------------------------------------ signing --
+ENTITLEMENTS="$REPO_ROOT/App/TheosStudio.entitlements"
+if command -v ldid >/dev/null 2>&1; then
+    rm -rf "$STAGE/$APP_REL/_CodeSignature"
+    if [ -f "$ENTITLEMENTS" ]; then
+        ldid -S"$ENTITLEMENTS" "$STAGE/$APP_REL/TheosStudio" || die "ldid failed to sign with $ENTITLEMENTS"
+        note "signed TheosStudio with $(basename -- "$ENTITLEMENTS")"
+    else
+        ldid -S "$STAGE/$APP_REL/TheosStudio" || die "ldid failed to sign the binary"
+    fi
 else
-    note "not running as root: relying on dpkg-deb --root-owner-group for root:wheel"
+    note "warning: ldid not found; shipping an unsigned binary"
 fi
 
-# ui-tools/uicache layout note: because the bundle lands in the *standard*
-# Applications directory of the jailbreak root (/var/jb/Applications or
-# /Applications), nothing else is needed. Installer.app and Sileo register the
-# app themselves, and `uicache -a` (run at respring) picks it up for the ones
-# that do not. There is deliberately no postinst: a package manager should not
-# run a shell script after installation when the layout is already correct.
-# Running `uicache -p <path>/TheosStudio.app` by hand is only needed when you install
-# with a plain `dpkg -i` and do not respring.
+if [ "$(id -u)" = "0" ]; then
+    chown -R 0:0 "$STAGE" || note "warning: chown failed"
+else
+    note "not running as root: relying on dpkg-deb --root-owner-group"
+fi
 
 # ------------------------------------------------------------------- build ---
 
