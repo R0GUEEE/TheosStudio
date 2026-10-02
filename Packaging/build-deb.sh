@@ -146,6 +146,7 @@ if [ "$PRINT_LAYOUT" != "0" ]; then
         printf './var/jb\n'
         printf './var/jb/Applications\n'
         printf './var/jb/Applications/TheosStudio.app\n'
+        printf './var/jb/etc/sudoers.d/theosstudio\n'
     else
         printf './Applications\n'
         printf './Applications/TheosStudio.app\n'
@@ -182,6 +183,20 @@ trap "rm -rf '$STAGE'" EXIT INT TERM
 
 mkdir -p "$STAGE/DEBIAN"
 mkdir -p "$STAGE/$APP_REL"
+
+# Rootless Dopamine launches SpringBoard apps as mobile. Install a narrowly
+# scoped sudo policy so TheosStudio can perform only the bootstrap mutations it
+# explicitly models as privileged operations, without an impossible TTY prompt.
+if [ "$LAYOUT" = "rootless" ]; then
+    SUDOERS_REL="var/jb/etc/sudoers.d/theosstudio"
+    mkdir -p "$STAGE/var/jb/etc/sudoers.d"
+    cat > "$STAGE/$SUDOERS_REL" <<'SUDOERS'
+# Managed by TheosStudio. Do not edit; removed with the package.
+Defaults:mobile !requiretty
+mobile ALL=(root) NOPASSWD: /var/jb/usr/bin/apt-get, /var/jb/usr/bin/dpkg, /var/jb/usr/bin/mkdir, /var/jb/usr/bin/mv, /var/jb/usr/bin/git, /var/jb/usr/bin/tar, /var/jb/usr/bin/xz
+SUDOERS
+    chmod 0440 "$STAGE/$SUDOERS_REL"
+fi
 
 note "staging $LAYOUT app in $STAGE"
 
@@ -259,6 +274,9 @@ chmod 0755 "$STAGE/$APP_REL"
 chmod 0755 "$STAGE"
 chmod 0755 "$STAGE/DEBIAN"
 chmod 0644 "$STAGE/DEBIAN/control"
+if [ "$LAYOUT" = "rootless" ]; then
+    chmod 0440 "$STAGE/$SUDOERS_REL"
+fi
 
 # root:wheel is what MobileSubstrate/Installer expect for an app bundle, and
 # `--root-owner-group` reproduces it when the build is not running as root (CI).
