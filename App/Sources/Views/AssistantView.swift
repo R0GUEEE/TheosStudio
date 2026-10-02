@@ -348,6 +348,24 @@ struct AssistantView: View {
         let path = project.path
         return AgentEnvironment(
             projectPath: path,
+            appStatus: { agentAppStatus() },
+            listProjects: {
+                guard !store.projects.isEmpty else { return "No projects are currently registered." }
+                return store.projects.map { item in
+                    [
+                        item.name,
+                        "path=\(item.path)",
+                        "package=\(item.packageIdentifier ?? "unknown")",
+                        "version=\(item.version ?? "unknown")",
+                        "scheme=\(item.scheme?.displayName ?? "unknown")",
+                        "artifact=\(item.builtPackage ?? "none")",
+                    ].joined(separator: " | ")
+                }.joined(separator: "\n")
+            },
+            refreshToolchain: {
+                store.refreshToolchain()
+                return agentAppStatus()
+            },
             listFiles: { FS.projectEntries(at: path, depth: 5) },
             readFile: { FS.read(path + "/" + $0) },
             writeFile: { relative, contents in try FS.write(contents, to: path + "/" + relative) },
@@ -370,6 +388,19 @@ struct AssistantView: View {
             privilegesCanEscalate: store.privileges.canEscalate,
             toolchainSummary: toolchainSummary
         )
+    }
+
+
+    private func agentAppStatus() -> String {
+        var lines = [
+            "Selected project: \(project?.path ?? "none")",
+            "Rootless prefix: \(store.jailbreak.rootlessPrefix ?? "none")",
+            "Privileges: \(store.privileges.summary)",
+            toolchainSummary,
+        ]
+        lines.append("Projects: \(store.projects.count)")
+        lines.append("Build ready: \(store.isReadyToBuild ? "yes" : "no")")
+        return lines.joined(separator: "\n")
     }
 
     /// The same sources the Find a hook screen uses: every SDK Theos has, plus
