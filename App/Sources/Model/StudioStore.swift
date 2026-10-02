@@ -123,9 +123,22 @@ final class StudioStore: ObservableObject {
 
     func refreshToolchain() {
         let override = settings.theosPathOverride.trimmingCharacters(in: .whitespaces)
+        // A packaged Theos is the zero-setup default. An explicit user override
+        // still wins; if this build does not contain Theos, normal jailbreak and
+        // home-directory discovery remains unchanged.
+        let bundledTheos = Bundle.main.resourceURL?
+            .appendingPathComponent("Theos", isDirectory: true).path
+        let preferredTheos: String?
+        if !override.isEmpty {
+            preferredTheos = override
+        } else if let bundledTheos, FS.fileExists(bundledTheos + "/makefiles/common.mk") {
+            preferredTheos = bundledTheos
+        } else {
+            preferredTheos = nil
+        }
         toolchain = TheosLocator.report(
             home: NSHomeDirectory(),
-            override: override.isEmpty ? nil : override,
+            override: preferredTheos,
             jailbreak: jailbreak,
             base: ProcessInfo.processInfo.environment,
             exists: FS.fileExists,
