@@ -554,52 +554,86 @@ private struct TranscriptRow: View {
     var body: some View {
         switch entry.kind {
         case .user:
-            HStack {
-                Spacer(minLength: 40)
+            HStack(alignment: .top) {
+                Spacer(minLength: 48)
                 Text(entry.text)
-                    .padding(10)
-                    .background(Color.accentColor.opacity(0.15))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .font(.subheadline)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 10)
+                    .background(Color.accentColor.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
         case .assistant:
-            Text(entry.text)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+            VStack(alignment: .leading, spacing: 7) {
+                Label("Assistant", systemImage: "sparkles")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.indigo)
+                Text(entry.text)
+                    .font(.subheadline)
+                    .textSelection(.enabled)
+            }
+            .padding(13)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
         case .tool:
-            HStack(spacing: 6) {
-                Image(systemName: "wrench.and.screwdriver").font(.caption2).foregroundColor(.blue)
-                Text(entry.title ?? entry.text).font(.caption).foregroundColor(.secondary)
+            HStack(spacing: 9) {
+                Image(systemName: "wrench.and.screwdriver.fill")
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                    .frame(width: 26, height: 26)
+                    .background(Color.blue.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Tool")
+                        .font(.caption2.weight(.bold))
+                        .foregroundColor(.blue)
+                    Text(entry.title ?? entry.text)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
         case .result:
-            VStack(alignment: .leading, spacing: 4) {
-                Text(entry.title ?? "Result").font(.caption).foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                Label(entry.title ?? "Tool Result", systemImage: "terminal")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
                 Text(entry.text)
                     .font(.system(size: 11, design: .monospaced))
-                    .lineLimit(12)
-                    .padding(8)
+                    .lineLimit(14)
+                    .textSelection(.enabled)
+                    .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(.tertiarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
         case .approval:
-            VStack(alignment: .leading, spacing: 4) {
-                Label(entry.title ?? "Approved", systemImage: "checkmark.seal")
-                    .font(.caption)
+            VStack(alignment: .leading, spacing: 5) {
+                Label(entry.title ?? "Approved", systemImage: "checkmark.shield.fill")
+                    .font(.caption.weight(.semibold))
                     .foregroundColor(.green)
                 if !entry.text.isEmpty { DiffText(entry.text) }
             }
         case .note:
-            HStack(alignment: .top, spacing: 6) {
-                Image(systemName: "info.circle").font(.caption2).foregroundColor(.orange)
+            Label {
                 Text(entry.text).font(.caption)
+            } icon: {
+                Image(systemName: "info.circle.fill").foregroundColor(.orange)
             }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.07))
+            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         case .error:
-            HStack(alignment: .top, spacing: 6) {
-                Image(systemName: "exclamationmark.octagon.fill").font(.caption2).foregroundColor(.red)
+            Label {
                 Text(entry.text).font(.caption)
+            } icon: {
+                Image(systemName: "exclamationmark.octagon.fill").foregroundColor(.red)
             }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.red.opacity(0.07))
+            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
         }
     }
 }
