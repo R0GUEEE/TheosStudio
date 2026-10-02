@@ -4,6 +4,9 @@ import Foundation
 /// and checked. Everything that touches the device is one of these, which is what
 /// makes "may this run without asking?" a question with a single answer.
 public enum AgentAction: Equatable, Sendable {
+    case appStatus
+    case listProjects
+    case refreshToolchain
     case listFiles
     case readFile(path: String)
     case writeFile(path: String, contents: String)
@@ -27,6 +30,9 @@ public enum AgentAction: Equatable, Sendable {
 
     public var toolName: String {
         switch self {
+        case .appStatus: return "app_status"
+        case .listProjects: return "list_projects"
+        case .refreshToolchain: return "refresh_toolchain"
         case .listFiles: return "list_files"
         case .readFile: return "read_file"
         case .writeFile: return "write_file"
@@ -97,6 +103,15 @@ public enum AgentActionParser {
         func flag(_ key: String, default fallback: Bool) -> Bool { arguments[key]?.boolValue ?? fallback }
 
         switch call.name {
+        case "app_status":
+            return .appStatus
+
+        case "list_projects":
+            return .listProjects
+
+        case "refresh_toolchain":
+            return .refreshToolchain
+
         case "list_files":
             return .listFiles
 
@@ -182,6 +197,21 @@ public enum AgentActionParser {
 public enum AgentToolCatalog {
 
     public static let all: [AgentTool] = [
+        AgentTool(
+            name: "app_status",
+            description: "Inspect TheosStudio-wide state: jailbreak layout, privilege mode, selected Theos root, SDKs, missing tools and build readiness. Use this for environment and setup problems.",
+            parameters: .schema(properties: [:], required: [])
+        ),
+        AgentTool(
+            name: "list_projects",
+            description: "List every project TheosStudio currently knows about, including path, package identifier, version, scheme and newest package.",
+            parameters: .schema(properties: [:], required: [])
+        ),
+        AgentTool(
+            name: "refresh_toolchain",
+            description: "Rescan Theos, SDKs and required build tools, then return the current app/toolchain status.",
+            parameters: .schema(properties: [:], required: [])
+        ),
         AgentTool(
             name: "list_files",
             description: "List every file in the project, with sizes. Call this first when you are unsure what exists.",
