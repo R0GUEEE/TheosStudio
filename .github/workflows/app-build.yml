@@ -137,6 +137,7 @@ jobs:
           set -euo pipefail
           test -d "$APP_BUNDLE_PATH" || { echo "::error::$APP_BUNDLE_PATH was not produced"; exit 1; }
           test -x "$APP_BUNDLE_PATH/TheosStudio" || { echo "::error::$APP_BUNDLE_PATH/TheosStudio is missing or not executable"; exit 1; }
+          test -f "$APP_BUNDLE_PATH/Assets.car" || { echo "::error::asset catalog was not compiled into the app"; exit 1; }
           test -f "$APP_BUNDLE_PATH/Theos/makefiles/common.mk" || { echo "::error::bundled Theos is missing"; exit 1; }
           test -d "$APP_BUNDLE_PATH/Theos/sdks/iPhoneOS16.5.sdk" || { echo "::error::bundled SDK is missing"; exit 1; }
           test -f "$APP_BUNDLE_PATH/Theos/vendor/dm.pl/dm.pl" || { echo "::error::bundled dm.pl is missing"; exit 1; }
