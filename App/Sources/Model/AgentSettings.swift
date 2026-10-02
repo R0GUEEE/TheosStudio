@@ -122,7 +122,7 @@ struct AgentSettings: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case providerID, baseURL, model, temperature, extraInstructions
-        case maxToolCallsPerTurn, runtimes
+        case runtimes
         case approvals, preferences, enabledTools, contextMode, contextBudget, maxTokens
         case streamsResponses, extraBodyJSON
     }
