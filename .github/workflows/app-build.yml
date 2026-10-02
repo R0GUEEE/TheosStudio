@@ -100,12 +100,47 @@ jobs:
           }
           echo "Bundled Theos: $(du -sh "$THEOS_DIR" | awk '{print $1}')"
 
+      - name: Bundle patched iOS SDK
+        run: |
+          set -euo pipefail
+          SDK_URL="https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS16.5.sdk.tar.xz"
+          curl --fail --location --retry 3 "$SDK_URL" -o "$RUNNER_TEMP/iPhoneOS16.5.sdk.tar.xz"
+          mkdir -p "$APP_BUNDLE_PATH/Theos/sdks"
+          tar -xJf "$RUNNER_TEMP/iPhoneOS16.5.sdk.tar.xz" -C "$APP_BUNDLE_PATH/Theos/sdks"
+          test -d "$APP_BUNDLE_PATH/Theos/sdks/iPhoneOS16.5.sdk" || {
+            echo "::error::iPhoneOS16.5.sdk was not bundled"
+            exit 1
+          }
+
+      - name: Bundle on-device build support
+        run: |
+          set -euo pipefail
+          # Theos itself carries Logos, NIC, dm.pl and its make infrastructure.
+          # Keep a stable app-local bin directory first on PATH for helper tools
+          # we can ship ourselves; jailbreak-provided clang/make/perl/dpkg remain
+          # compatible fallbacks when a redistributable iOS binary is unavailable.
+          mkdir -p "$APP_BUNDLE_PATH/Toolchain/bin"
+          cat > "$APP_BUNDLE_PATH/Toolchain/manifest.txt" <<'EOF'
+          Theos=embedded
+          SDK=iPhoneOS16.5
+          Logos=embedded-with-Theos
+          NIC=embedded-with-Theos
+          dm.pl=embedded-with-Theos
+          EOF
+          test -f "$APP_BUNDLE_PATH/Theos/vendor/dm.pl/dm.pl" || {
+            echo "::error::Theos dm.pl vendor component is missing"
+            exit 1
+          }
+
       - name: Verify the app bundle
         run: |
           set -euo pipefail
           test -d "$APP_BUNDLE_PATH" || { echo "::error::$APP_BUNDLE_PATH was not produced"; exit 1; }
           test -x "$APP_BUNDLE_PATH/TheosStudio" || { echo "::error::$APP_BUNDLE_PATH/TheosStudio is missing or not executable"; exit 1; }
           test -f "$APP_BUNDLE_PATH/Theos/makefiles/common.mk" || { echo "::error::bundled Theos is missing"; exit 1; }
+          test -d "$APP_BUNDLE_PATH/Theos/sdks/iPhoneOS16.5.sdk" || { echo "::error::bundled SDK is missing"; exit 1; }
+          test -f "$APP_BUNDLE_PATH/Theos/vendor/dm.pl/dm.pl" || { echo "::error::bundled dm.pl is missing"; exit 1; }
+          test -f "$APP_BUNDLE_PATH/Toolchain/manifest.txt" || { echo "::error::toolchain manifest is missing"; exit 1; }
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_BUNDLE_PATH/Info.plist"
           /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP_BUNDLE_PATH/Info.plist"
           lipo -info "$APP_BUNDLE_PATH/TheosStudio"
