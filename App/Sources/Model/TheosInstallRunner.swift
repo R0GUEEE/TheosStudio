@@ -6,9 +6,9 @@ import TheosStudioCore
 ///
 /// It runs the same steps the official installer does on a jailbroken device —
 /// dependency packages from the package manager, then Theos itself and an SDK —
-/// but with the split made explicit: only the packages need root. So on a device
-/// where the app cannot become root, the SDK and Theos are still installed, and
-/// the one part that could not run is named instead of the whole thing failing.
+/// with privilege requirements modeled per destination. Bootstrap-owned paths such
+/// as /var/jb/opt/theos use root/passwordless sudo for filesystem mutations, while
+/// builds continue to run with the normal app environment.
 @MainActor
 final class TheosInstallRunner: ObservableObject {
 
@@ -59,28 +59,30 @@ final class TheosInstallRunner: ObservableObject {
         self.store = store
         self.destination = destination
         self.scope = scope
-        self.privileges = store.privileges
         self.environment = store.commandEnvironment()
         self.log = []
         self.warnings = []
         self.completedSteps = 0
         self.totalSteps = 0
         self.queue = []
-
-        let needed = ["git", "tar", "xz", "mkdir", "mv", "apt-get"]
-        toolPaths = store.toolPaths(for: needed)
+        self.phase = .preparing
 
         append("$ destination: \(destination)")
-        append("$ privileges: \(privileges.summary)")
+        append("Checking privileges…")
+        store.probePrivileges(force: true) { [weak self, weak store] in
+            guard let self, let store else { return }
+            self.privileges = store.privileges
+            let needed = ["git", "tar", "xz", "mkdir", "mv", "apt-get"]
+            self.toolPaths = store.toolPaths(for: needed)
+            self.append("$ privileges: \(self.privileges.summary)")
+            self.append("$ PATH: \(self.environment["PATH"] ?? "unset")")
 
-        append("$ PATH: \(environment["PATH"] ?? "unset")")
-
-        if scope == .dependenciesOnly {
-            finishPlanning(store: store, asset: nil)
-        } else {
-            phase = .preparing
-            append("Looking up the newest SDK in theos/sdks…")
-            Task { await self.lookupSDK(store: store) }
+            if scope == .dependenciesOnly {
+                self.finishPlanning(store: store, asset: nil)
+            } else {
+                self.append("Looking up the newest SDK in theos/sdks…")
+                Task { await self.lookupSDK(store: store) }
+            }
         }
     }
 
