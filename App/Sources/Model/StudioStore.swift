@@ -156,9 +156,13 @@ final class StudioStore: ObservableObject {
             return
         }
 
+        // Ask sudo to list the policy instead of executing `true`. The packaged
+        // TheosStudio policy intentionally grants only specific bootstrap tools,
+        // so `sudo -n true` is denied even when every command the app needs is
+        // correctly NOPASSWD-authorized.
         let process = ShellProcess(
             executable: sudoPath,
-            arguments: ["-n", "true"],
+            arguments: ["-n", "-l"],
             environment: ProcessInfo.processInfo.environment
         )
         do {
