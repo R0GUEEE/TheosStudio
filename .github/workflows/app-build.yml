@@ -188,6 +188,38 @@ jobs:
           fi
 
           expected_arch=$([ "${{ matrix.layout }}" = "rootless" ] && echo iphoneos-arm64 || echo iphoneos-arm)
+          if [ "${{ matrix.layout }}" = "rootless" ]; then
+            if ! dpkg-deb -c "$deb" | grep -q 'var/jb/etc/sudoers.d/theosstudio          if [ "$actual_arch" != "$expected_arch" ]; then
+            echo "::error::$deb declares Architecture: $actual_arch, expected $expected_arch"
+            exit 1
+          fi
+          echo "OK: $deb ($actual_arch)"
+
+      - name: Upload the .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: theosstudio-deb-${{ matrix.layout }}
+          path: dist/*.deb
+          if-no-files-found: error
+          retention-days: 14
+; then
+              echo "::error::rootless package is missing its TheosStudio sudo policy"
+              exit 1
+            fi
+            tmpdir=$(mktemp -d)
+            dpkg-deb -x "$deb" "$tmpdir"
+            policy="$tmpdir/var/jb/etc/sudoers.d/theosstudio"
+            grep -q '^mobile ALL=(root) NOPASSWD:' "$policy" || {
+              echo "::error::TheosStudio sudo policy does not grant scoped passwordless commands"
+              exit 1
+            }
+            grep -q '/var/jb/usr/bin/apt-get' "$policy" || {
+              echo "::error::TheosStudio sudo policy does not cover apt-get"
+              exit 1
+            }
+            rm -rf "$tmpdir"
+          fi
+
           actual_arch=$(dpkg-deb -f "$deb" Architecture)
           if [ "$actual_arch" != "$expected_arch" ]; then
             echo "::error::$deb declares Architecture: $actual_arch, expected $expected_arch"
