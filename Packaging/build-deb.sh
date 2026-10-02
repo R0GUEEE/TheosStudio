@@ -193,7 +193,7 @@ if [ "$LAYOUT" = "rootless" ]; then
     cat > "$STAGE/$SUDOERS_REL" <<'SUDOERS'
 # Managed by TheosStudio. Do not edit; removed with the package.
 Defaults:mobile !requiretty
-mobile ALL=(root) NOPASSWD: /var/jb/usr/bin/apt-get, /var/jb/usr/bin/dpkg, /var/jb/usr/bin/mkdir, /var/jb/usr/bin/mv, /var/jb/usr/bin/git, /var/jb/usr/bin/tar, /var/jb/usr/bin/xz
+mobile ALL=(root) NOPASSWD: /var/jb/usr/bin/apt-get, /var/jb/usr/bin/dpkg, /var/jb/usr/bin/mkdir, /var/jb/usr/bin/mv, /var/jb/usr/bin/git, /var/jb/usr/bin/tar, /var/jb/usr/bin/xz, /var/jb/usr/bin/killall, /var/jb/usr/bin/sbreload
 SUDOERS
     chmod 0440 "$STAGE/$SUDOERS_REL"
 fi
