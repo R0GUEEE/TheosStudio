@@ -26,7 +26,7 @@ public enum AgentPolicy {
     /// unknown is treated as a write — the cautious answer.
     public static func access(for action: AgentAction) -> AgentAccess {
         switch action {
-        case .listFiles, .readFile, .readCrashes, .gitStatus, .gitDiff, .searchHeaders, .finish:
+        case .appStatus, .listProjects, .refreshToolchain, .listFiles, .readFile, .readCrashes, .gitStatus, .gitDiff, .searchHeaders, .finish:
             return .read
         case .writeFile, .replaceInFile, .updateControl:
             return .write
@@ -103,7 +103,7 @@ public enum AgentPolicy {
     /// The rules that hold whatever the settings say.
     static func decideSandbox(_ action: AgentAction, privilegesCanEscalate: Bool) -> AgentDecision {
         switch action {
-        case .listFiles, .finish, .readCrashes, .gitStatus, .searchHeaders:
+        case .appStatus, .listProjects, .refreshToolchain, .listFiles, .finish, .readCrashes, .gitStatus, .searchHeaders:
             return .allowed
 
         case .gitDiff(let path):
