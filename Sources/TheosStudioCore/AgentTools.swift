@@ -52,6 +52,12 @@ public enum AgentAction: Equatable, Sendable {
     /// One line for the transcript.
     public var summary: String {
         switch self {
+        case .appStatus:
+            return "Inspect app, jailbreak and toolchain status"
+        case .listProjects:
+            return "List projects known to TheosStudio"
+        case .refreshToolchain:
+            return "Rescan the Theos toolchain"
         case .listFiles:
             return "List the project's files"
         case .readFile(let path):
