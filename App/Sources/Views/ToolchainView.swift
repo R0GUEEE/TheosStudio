@@ -19,7 +19,12 @@ struct ToolchainView: View {
     private var report: ToolchainReport? { store.toolchain }
 
     private var defaultDestination: String {
-        Paths.documents + "/Theos"
+        // Dopamine/Procursus rootless toolchain location.
+        // Keep the UI default aligned with TheosLocator, which probes this path first.
+        if store.jailbreak.rootlessPrefix != nil {
+            return "/var/jb/opt/theos"
+        }
+        return Paths.documents + "/Theos"
     }
 
     var body: some View {
@@ -121,7 +126,7 @@ struct ToolchainView: View {
         } header: {
             Text("Theos")
         } footer: {
-            Text("Searched: /var/jb/opt/theos, /opt/theos, ~/theos, and $THEOS. A directory counts as Theos when it contains makefiles/common.mk.")
+            Text("Dopamine rootless defaults to /var/jb/opt/theos. Also searched: /opt/theos, ~/theos, and $THEOS. A directory counts as Theos when it contains makefiles/common.mk.")
         }
     }
 
