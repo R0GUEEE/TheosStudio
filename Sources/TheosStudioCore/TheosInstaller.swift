@@ -202,12 +202,13 @@ public enum TheosInstaller {
             theosSteps(
                 builder,
                 destination: options.destination,
+                privileges: privileges,
                 exists: exists,
                 listDirectory: listDirectory
             )
         }
         if options.scope == .theosAndSDK || options.scope == .sdkOnly {
-            sdkSteps(builder, destination: options.destination, asset: options.sdkAsset)
+            sdkSteps(builder, destination: options.destination, asset: options.sdkAsset, privileges: privileges)
         }
 
         return TheosInstallPlan(
@@ -250,10 +251,16 @@ public enum TheosInstaller {
     private static func theosSteps(
         _ builder: InstallPlanBuilder,
         destination: String,
+        privileges: PrivilegeContext,
         exists: (String) -> Bool,
         listDirectory: (String) -> [String]
     ) {
         let makefiles = destination + "/makefiles/common.mk"
+        let needsRoot = destination == "/var/jb" || destination.hasPrefix("/var/jb/")
+        if needsRoot && !privileges.canEscalate {
+            builder.warn("\(destination) is inside the Dopamine bootstrap and needs root. Install passwordless sudo or run TheosStudio as root, then retry.")
+            return
+        }
         let alreadyThere = exists(makefiles)
         let entries = listDirectory(destination)
 
@@ -261,6 +268,7 @@ public enum TheosInstaller {
             builder.add(InstallStep(
                 label: "Create \(destination)",
                 kind: .command(tool: "mkdir", arguments: ["-p", destination]),
+                requiresRoot: needsRoot,
                 skipIfExists: destination
             ))
         }
@@ -270,6 +278,7 @@ public enum TheosInstaller {
                 builder.add(InstallStep(
                     label: "Repair Theos submodules",
                     kind: .command(tool: "git", arguments: ["-C", destination, "submodule", "update", "--init", "--recursive"]),
+                    requiresRoot: needsRoot,
                     // Not fatal: an unreachable GitHub or an odd git state must not
                     // stop the SDK from arriving, which is the part that unblocks a
                     // build.
@@ -293,6 +302,7 @@ public enum TheosInstaller {
         builder.add(InstallStep(
             label: "Clone Theos",
             kind: .command(tool: "git", arguments: ["clone", "--recursive", repository, destination]),
+            requiresRoot: needsRoot,
             skipIfExists: makefiles,
             note: "The submodules are the Logos preprocessor, the headers and the templates — without them nothing builds."
         ))
@@ -303,8 +313,14 @@ public enum TheosInstaller {
     private static func sdkSteps(
         _ builder: InstallPlanBuilder,
         destination: String,
-        asset: SDKAsset?
+        asset: SDKAsset?,
+        privileges: PrivilegeContext
     ) {
+        let needsRoot = destination == "/var/jb" || destination.hasPrefix("/var/jb/")
+        if needsRoot && !privileges.canEscalate {
+            builder.warn("\(destination) is inside the Dopamine bootstrap and the SDK install needs root. Install passwordless sudo or run TheosStudio as root, then retry.")
+            return
+        }
         guard let asset else {
             builder.warn("No SDK was selected, so Theos would be left without one — and Theos cannot compile anything without an SDK in $THEOS/sdks.")
             return
@@ -318,6 +334,7 @@ public enum TheosInstaller {
             builder.add(InstallStep(
                 label: "Create \(sdkDirectory)",
                 kind: .command(tool: "mkdir", arguments: ["-p", sdkDirectory]),
+                requiresRoot: needsRoot,
                 skipIfExists: sdkDirectory
             ))
         }
@@ -334,6 +351,7 @@ public enum TheosInstaller {
         builder.add(InstallStep(
             label: "Unpack \(asset.name)",
             kind: .command(tool: "tar", arguments: ["-xJf", archive, "-C", sdkDirectory]),
+            requiresRoot: needsRoot,
             skipIfExists: installed,
             tolerateFailure: true,
             note: "If this tar was built without xz support, the next step decompresses first."
@@ -348,12 +366,14 @@ public enum TheosInstaller {
         builder.add(InstallStep(
             label: "Decompress \(asset.name)",
             kind: .command(tool: "xz", arguments: ["-d", archive]),
+            requiresRoot: needsRoot,
             skipIfExists: installed,
             tolerateFailure: true
         ))
         builder.add(InstallStep(
             label: "Unpack \(asset.name) (after decompression)",
             kind: .command(tool: "tar", arguments: ["-xf", sdkDirectory + "/." + asset.name + ".tar", "-C", sdkDirectory]),
+            requiresRoot: needsRoot,
             skipIfExists: installed,
             note: "This device's tar has no xz support, so xz did it."
         ))
