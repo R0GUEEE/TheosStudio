@@ -1,9 +1,15 @@
 import SwiftUI
 
 enum StudioUI {
-    static let cardRadius: CGFloat = 16
-    static let compactRadius: CGFloat = 12
-    static let spacing: CGFloat = 12
+    static let cardRadius: CGFloat = 20
+    static let compactRadius: CGFloat = 13
+    static let spacing: CGFloat = 14
+    static let pageInset: CGFloat = 16
+
+    static let accent = Color.indigo
+    static let success = Color.green
+    static let warning = Color.orange
+    static let danger = Color.red
 
     static func schemeColor(_ scheme: String) -> Color {
         switch scheme.lowercased() {
@@ -16,19 +22,85 @@ enum StudioUI {
 }
 
 struct StudioCard<Content: View>: View {
+    var padding: CGFloat = StudioUI.spacing
     let content: Content
-    init(@ViewBuilder content: () -> Content) { self.content = content() }
+
+    init(padding: CGFloat = StudioUI.spacing, @ViewBuilder content: () -> Content) {
+        self.padding = padding
+        self.content = content()
+    }
 
     var body: some View {
         content
-            .padding(StudioUI.spacing)
+            .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(.secondarySystemGroupedBackground))
             .clipShape(RoundedRectangle(cornerRadius: StudioUI.cardRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: StudioUI.cardRadius, style: .continuous)
-                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 0.75)
             )
+    }
+}
+
+struct StudioHero<Content: View>: View {
+    let eyebrow: String?
+    let title: String
+    let subtitle: String?
+    let systemImage: String
+    let tint: Color
+    let content: Content
+
+    init(
+        eyebrow: String? = nil,
+        title: String,
+        subtitle: String? = nil,
+        systemImage: String,
+        tint: Color = .accentColor,
+        @ViewBuilder content: () -> Content = { EmptyView() }
+    ) {
+        self.eyebrow = eyebrow
+        self.title = title
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.tint = tint
+        self.content = content()
+    }
+
+    var body: some View {
+        StudioCard(padding: 18) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(tint.opacity(0.14))
+                        Image(systemName: systemImage)
+                            .font(.system(size: 24, weight: .semibold))
+                            .foregroundColor(tint)
+                    }
+                    .frame(width: 54, height: 54)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        if let eyebrow {
+                            Text(eyebrow.uppercased())
+                                .font(.caption2.weight(.bold))
+                                .tracking(0.8)
+                                .foregroundColor(tint)
+                        }
+                        Text(title)
+                            .font(.title2.weight(.bold))
+                        if let subtitle {
+                            Text(subtitle)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                content
+            }
+        }
     }
 }
 
@@ -62,22 +134,25 @@ struct StudioMetric: View {
     var tint: Color = .accentColor
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Image(systemName: systemImage)
-                .font(.headline)
-                .foregroundColor(tint)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: systemImage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(tint)
+                Spacer()
+            }
             Text(value)
-                .font(.title3.weight(.semibold))
+                .font(.title2.weight(.bold))
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             Text(title)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundColor(.secondary)
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.08))
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
+        .background(tint.opacity(0.075))
         .clipShape(RoundedRectangle(cornerRadius: StudioUI.compactRadius, style: .continuous))
     }
 }
@@ -91,20 +166,25 @@ struct StudioEmptyState: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 36, weight: .light))
-                .foregroundColor(.accentColor)
+            ZStack {
+                Circle().fill(Color.accentColor.opacity(0.09))
+                Image(systemName: systemImage)
+                    .font(.system(size: 30, weight: .medium))
+                    .foregroundColor(.accentColor)
+            }
+            .frame(width: 64, height: 64)
             Text(title).font(.headline)
             Text(message)
                 .font(.footnote)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
+                .frame(maxWidth: 340)
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .buttonStyle(.borderedProminent)
             }
         }
-        .padding(.vertical, 18)
+        .padding(.vertical, 24)
         .frame(maxWidth: .infinity)
     }
 }
@@ -112,7 +192,29 @@ struct StudioEmptyState: View {
 struct StudioStatusDot: View {
     let color: Color
     var body: some View {
-        Circle().fill(color).frame(width: 7, height: 7)
+        Circle()
+            .fill(color)
+            .frame(width: 7, height: 7)
+            .shadow(color: color.opacity(0.35), radius: 3)
+    }
+}
+
+struct StudioPill: View {
+    let text: String
+    var systemImage: String?
+    var tint: Color = .secondary
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if let systemImage { Image(systemName: systemImage) }
+            Text(text)
+        }
+        .font(.caption2.weight(.semibold))
+        .foregroundColor(tint)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(tint.opacity(0.1))
+        .clipShape(Capsule())
     }
 }
 
@@ -131,6 +233,7 @@ struct StudioActionButton: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
         } else {
             Button(action: action) {
                 Label(title, systemImage: systemImage)
@@ -138,6 +241,7 @@ struct StudioActionButton: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
+            .controlSize(.large)
         }
     }
 }
