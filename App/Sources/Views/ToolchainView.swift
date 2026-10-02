@@ -74,33 +74,41 @@ struct ToolchainView: View {
 
     private var statusSection: some View {
         Section {
-            HStack {
-                Image(systemName: store.isReadyToBuild ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                    .foregroundColor(store.isReadyToBuild ? .green : .orange)
-                    .font(.title2)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(store.isReadyToBuild ? "Ready to build" : "Not ready to build")
-                        .font(.headline)
-                    Text(store.isReadyToBuild
-                         ? "Theos, an SDK and every tool it drives were found."
-                         : "Something is missing. Nothing below has been changed for you.")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
+            StudioHero(
+                eyebrow: "Device Environment",
+                title: store.isReadyToBuild ? "Ready to build" : "Toolchain needs attention",
+                subtitle: store.isReadyToBuild
+                    ? "Theos, an SDK, and the required build tools are available."
+                    : "Review the missing components below. TheosStudio will keep build setup changes explicit.",
+                systemImage: store.isReadyToBuild ? "checkmark.seal.fill" : "wrench.and.screwdriver.fill",
+                tint: store.isReadyToBuild ? .green : .orange
+            ) {
+                HStack(spacing: 7) {
+                    StudioPill(
+                        text: store.jailbreak.rootlessPrefix == nil ? "Rootful" : "Rootless",
+                        systemImage: "iphone",
+                        tint: store.jailbreak.rootlessPrefix == nil ? .orange : .blue
+                    )
+                    StudioPill(
+                        text: store.privileges.summary,
+                        systemImage: "lock.shield",
+                        tint: .secondary
+                    )
                 }
+
+                Button {
+                    store.refreshToolchain()
+                    store.probePrivileges(force: true)
+                } label: {
+                    Label("Rescan Environment", systemImage: "arrow.clockwise")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
             }
-            DetailRow(
-                label: "Jailbreak",
-                value: store.jailbreak.rootlessPrefix == nil ? "rootful" : "rootless (\(store.jailbreak.rootlessPrefix!))",
-                monospaced: true
-            )
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Privileges").font(.footnote).foregroundColor(.secondary)
-                Text(store.privileges.summary).font(.footnote)
-            }
-        } header: {
-            Text("This device")
-        } footer: {
-            Text("A package installed by dpkg needs root, and so does apt-get. Building does not: a project and everything Theos writes during a build live in a folder this app already owns.")
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 6, trailing: 16))
+            .listRowBackground(Color.clear)
         }
     }
 
