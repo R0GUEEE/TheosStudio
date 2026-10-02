@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#10122b"/><stop offset=".5" stop-color="#20104a"/><stop offset="1" stop-color="#031a38"/></linearGradient><linearGradient id="neon" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#b02cff"/><stop offset="1" stop-color="#00b8ff"/></linearGradient></defs>
+<rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
+<rect x="110" y="120" width="804" height="784" rx="150" fill="none" stroke="url(#neon)" stroke-width="18"/>
+<rect x="190" y="245" width="500" height="360" rx="48" fill="#0c1230" stroke="#7c36ff" stroke-width="20"/>
+<circle cx="245" cy="300" r="16" fill="#c16cff"/><circle cx="295" cy="300" r="16" fill="#7740ff"/><circle cx="345" cy="300" r="16" fill="#325bff"/>
+<path d="M245 370h270M245 425h210M245 480h145" stroke="#4567d9" stroke-width="22" stroke-linecap="round"/>
+<path d="M670 170c70 0 132 28 178 74l-66 67-73-26-92 92 174 174-80 80-174-174-183 183c-25 25-65 25-90 0s-25-65 0-90l306-306-22-70c35-16 76-24 122-24z" fill="#f1f3ff" stroke="#7187ff" stroke-width="18" stroke-linejoin="round"/>
+<path d="M326 708l80-80 190 190H436z" fill="url(#neon)"/>
+</svg>
