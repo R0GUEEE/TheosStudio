@@ -74,8 +74,17 @@ final class ShellProcess {
         var envp: [UnsafeMutablePointer<CChar>?] = environment.map { strdup("\($0.key)=\($0.value)") }
         envp.append(nil)
 
+        var attributes: posix_spawnattr_t?
+        _ = posix_spawnattr_init(&attributes)
+        // Put the command in its own process group. `make` fans out into clang,
+        // Logos, ldid and packaging helpers; cancellation must reach the whole
+        // build tree rather than leaving grandchildren running in the background.
+        _ = posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP))
+        _ = posix_spawnattr_setpgroup(&attributes, 0)
+
         var child: pid_t = 0
-        let result = posix_spawn(&child, executable, &actions, nil, &argv, &envp)
+        let result = posix_spawn(&child, executable, &actions, &attributes, &argv, &envp)
+        posix_spawnattr_destroy(&attributes)
         posix_spawn_file_actions_destroy(&actions)
         for pointer in argv where pointer != nil { free(pointer) }
         for pointer in envp where pointer != nil { free(pointer) }
@@ -97,6 +106,7 @@ final class ShellProcess {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var collected = ""
             var backlog: [UInt8] = []
+            var lineRemainder = ""
             var buffer = [UInt8](repeating: 0, count: 8192)
 
             while true {
@@ -109,14 +119,14 @@ final class ShellProcess {
                     let text = String(decoding: backlog[0..<decodable], as: UTF8.self)
                     backlog.removeFirst(decodable)
                     collected += text
-                    var remainder = text
+                    var remainder = lineRemainder + text
                     while let index = remainder.firstIndex(where: { $0 == "\n" }) {
                         let line = String(remainder[remainder.startIndex..<index])
                         remainder = String(remainder[remainder.index(after: index)...])
                         let trimmed = line.hasSuffix("\r") ? String(line.dropLast()) : line
                         DispatchQueue.main.async { onLine(trimmed) }
                     }
-                    self?.partial = remainder
+                    lineRemainder = remainder
                     continue
                 }
                 if count < 0 && errno == EINTR { continue }
@@ -126,11 +136,9 @@ final class ShellProcess {
 
             var status: Int32 = 0
             waitpid(child, &status, 0)
-            if let leftover = self?.partial, !leftover.isEmpty {
-                let line = leftover
-                self?.partial = ""
-                DispatchQueue.main.async { onLine(line) }
-            }
+            // Decode any final bytes and flush the final unterminated line.
+            if !backlog.isEmpty { lineRemainder += String(decoding: backlog, as: UTF8.self) }
+            if !lineRemainder.isEmpty { DispatchQueue.main.async { onLine(lineRemainder) } }
 
             // The wait(2) status word is not a plain exit code: the low seven
             // bits hold the signal that killed the child (0 when it exited on
@@ -168,7 +176,8 @@ final class ShellProcess {
         let child = pid
         lock.unlock()
         if child > 0 {
-            kill(child, SIGTERM)
+            // Negative pid targets the process group created at spawn time.
+            kill(-child, SIGTERM)
         }
     }
 
@@ -195,8 +204,6 @@ final class ShellProcess {
         return trail < expected ? index : bytes.count
     }
 
-    /// The tail of the last line, kept between reads.
-    private var partial = ""
 }
 
 /// Convenience for the many short-lived commands the app runs (probing a tool,
