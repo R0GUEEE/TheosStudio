@@ -80,6 +80,24 @@ struct NewProjectView: View {
         NavigationView {
             Form {
                 Section {
+                    StudioHero(
+                        eyebrow: "New Workspace",
+                        title: "Create a Theos project",
+                        subtitle: "Start from a native template or clone an existing repository. The result opens directly in the same editor, build, package, and agent workflow.",
+                        systemImage: "plus.rectangle.on.folder.fill",
+                        tint: .indigo
+                    ) {
+                        HStack(spacing: 7) {
+                            StudioPill(text: kind.displayName, systemImage: "hammer.fill", tint: .indigo)
+                            StudioPill(text: scheme.displayName, systemImage: "shippingbox", tint: StudioUI.schemeColor(scheme.displayName))
+                            StudioPill(text: "\(filesToWrite.count) files", systemImage: "doc.on.doc", tint: .secondary)
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 6, trailing: 16))
+                    .listRowBackground(Color.clear)
+                }
+
+                Section {
                     TextField("https://github.com/user/tweak.git", text: $cloneURL)
                         .font(.system(size: 12, design: .monospaced))
                         .autocapitalization(.none)

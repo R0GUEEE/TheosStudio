@@ -32,29 +32,25 @@ struct SettingsView: View {
         NavigationView {
             Form {
                 Section {
-                    StudioCard {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill((store.isReadyToBuild ? Color.green : Color.orange).opacity(0.12))
-                                Image(systemName: store.isReadyToBuild ? "checkmark.seal.fill" : "wrench.and.screwdriver.fill")
-                                    .font(.title2)
-                                    .foregroundColor(store.isReadyToBuild ? .green : .orange)
-                            }
-                            .frame(width: 50, height: 50)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("TheosStudio").font(.headline)
-                                Text(store.isReadyToBuild ? "Toolchain ready" : "Toolchain needs attention")
-                                    .font(.caption)
-                                    .foregroundColor(store.isReadyToBuild ? .green : .orange)
-                                Text("Version \(Self.appVersion)")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
+                    StudioHero(
+                        eyebrow: "TheosStudio",
+                        title: "Development Environment",
+                        subtitle: store.isReadyToBuild
+                            ? "Your on-device workspace is configured and ready to build."
+                            : "The workspace is available, but the toolchain still needs attention.",
+                        systemImage: store.isReadyToBuild ? "checkmark.seal.fill" : "gearshape.2.fill",
+                        tint: store.isReadyToBuild ? .green : .orange
+                    ) {
+                        HStack(spacing: 7) {
+                            StudioPill(text: "v\(Self.appVersion)", systemImage: "app.badge", tint: .secondary)
+                            StudioPill(
+                                text: store.isReadyToBuild ? "Build ready" : "Setup needed",
+                                systemImage: store.isReadyToBuild ? "hammer.fill" : "wrench.and.screwdriver.fill",
+                                tint: store.isReadyToBuild ? .green : .orange
+                            )
                         }
                     }
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 6, trailing: 16))
                     .listRowBackground(Color.clear)
                 }
 
@@ -76,7 +72,7 @@ struct SettingsView: View {
                         Label("Create it and rescan", systemImage: "folder.badge.plus")
                     }
                 } header: {
-                    Text("Projects")
+                    Label("Workspace", systemImage: "folder")
                 } footer: {
                     Text("Projects are plain directories, so anything a terminal or Filza puts in this folder shows up in the list. \(Paths.defaultProjectsDirectory.removingPrefix(NSHomeDirectory())) is where a new install looks.")
                 }
@@ -114,7 +110,7 @@ struct SettingsView: View {
                              : "Parallel make: \(store.settings.jobs) jobs")
                     }
                 } header: {
-                    Text("Building")
+                    Label("Build", systemImage: "hammer")
                 } footer: {
                     Text("Theos does not track header dependencies. If an edit seems to have no effect, turn on cleaning before each build.")
                 }
@@ -128,7 +124,7 @@ struct SettingsView: View {
                         set: { UserDefaults.standard.set($0, forKey: "com.r0gueee.theosstudio.line-numbers") }
                     ))
                 } header: {
-                    Text("Editor")
+                    Label("Editor", systemImage: "chevron.left.forwardslash.chevron.right")
                 } footer: {
                     Text("Line numbers matter more here than in a desktop editor: every compiler error and every crash frame is reported as a line in a file.")
                 }
@@ -154,7 +150,7 @@ struct SettingsView: View {
                         }
                     }
                 } header: {
-                    Text("AI assistant")
+                    Label("AI Assistant", systemImage: "sparkles")
                 } footer: {
                     Text("The assistant reads the project, edits it, builds it and installs it — with your approval for anything that writes. It needs an OpenAI-compatible endpoint and a key of your own.")
                 }

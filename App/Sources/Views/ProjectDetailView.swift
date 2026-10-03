@@ -159,59 +159,55 @@ struct ProjectDetailView: View {
 
     private var projectHeroSection: some View {
         Section {
-            StudioCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top, spacing: 12) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(StudioUI.schemeColor(current.displayScheme).opacity(0.12))
-                            Image(systemName: current.builtPackage == nil ? "hammer.fill" : "checkmark.seal.fill")
-                                .font(.title2)
-                                .foregroundColor(current.builtPackage == nil ? .accentColor : .green)
-                        }
-                        .frame(width: 52, height: 52)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(current.name)
-                                .font(.title3.weight(.bold))
-                            Text(current.packageIdentifier ?? "No package identifier")
-                                .font(.caption.monospaced())
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                            HStack(spacing: 6) {
-                                StatusChip(text: current.displayScheme, color: StudioUI.schemeColor(current.displayScheme))
-                                if let version = current.version {
-                                    StatusChip(text: "v\(version)", color: .secondary)
-                                }
-                            }
-                        }
-                        Spacer()
+            StudioHero(
+                eyebrow: current.kind?.displayName ?? "Project",
+                title: current.name,
+                subtitle: current.packageIdentifier ?? "No package identifier",
+                systemImage: current.builtPackage == nil ? "hammer.fill" : "checkmark.seal.fill",
+                tint: current.builtPackage == nil ? StudioUI.schemeColor(current.displayScheme) : .green
+            ) {
+                HStack(spacing: 7) {
+                    StudioPill(text: current.displayScheme, systemImage: "shippingbox", tint: StudioUI.schemeColor(current.displayScheme))
+                    if let version = current.version {
+                        StudioPill(text: "v\(version)", systemImage: "tag", tint: .secondary)
                     }
-
-                    HStack(spacing: 8) {
-                        Button {
-                            installAfterBuild = false
-                            runner.build(project: current, store: store)
-                        } label: {
-                            Label("Build", systemImage: "hammer.fill")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(runner.phase.isRunning)
-
-                        Button {
-                            installAfterBuild = true
-                            runner.build(project: current, store: store)
-                        } label: {
-                            Label("Build & Install", systemImage: "arrow.down.circle.fill")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(runner.phase.isRunning)
+                    if !controlIssues.isEmpty {
+                        StudioPill(text: "\(controlIssues.count) issue\(controlIssues.count == 1 ? "" : "s")", systemImage: "exclamationmark.triangle.fill", tint: .orange)
                     }
                 }
+
+                if let testFlow {
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text(testFlow)
+                            .font(.subheadline.weight(.medium))
+                        Spacer()
+                    }
+                    .padding(11)
+                    .background(Color.accentColor.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: StudioUI.compactRadius, style: .continuous))
+                }
+
+                StudioActionButton(title: "Build, Install & Test", systemImage: "play.fill", prominent: true) {
+                    buildInstallAndTest()
+                }
+                .disabled(runner.phase.isRunning || installer.phase.isRunning)
+
+                HStack(spacing: 8) {
+                    StudioActionButton(title: "Build", systemImage: "hammer.fill") {
+                        installAfterBuild = false
+                        runner.build(project: current, store: store)
+                    }
+                    .disabled(runner.phase.isRunning)
+
+                    StudioActionButton(title: "Build & Install", systemImage: "arrow.down.circle.fill") {
+                        installAfterBuild = true
+                        runner.build(project: current, store: store)
+                    }
+                    .disabled(runner.phase.isRunning)
+                }
             }
-            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 6, trailing: 16))
             .listRowBackground(Color.clear)
         }
     }
@@ -224,7 +220,7 @@ struct ProjectDetailView: View {
             DetailRow(label: "Version", value: current.version ?? "—", monospaced: true)
             DetailRow(label: "Path", value: current.path.removingPrefix(NSHomeDirectory()), monospaced: true)
         } header: {
-            Text("Project")
+            Label("Project", systemImage: "info.circle")
         }
     }
 
@@ -270,7 +266,7 @@ struct ProjectDetailView: View {
             }
         } header: {
             HStack {
-                Text("Files")
+                Label("Files", systemImage: "folder")
                 Spacer()
                 Button {
                     isCreatingFile = true
@@ -371,7 +367,7 @@ struct ProjectDetailView: View {
                 }
             }
         } header: {
-            Text("Build")
+            Label("Build", systemImage: "hammer")
         } footer: {
             Text(buildFooter)
         }

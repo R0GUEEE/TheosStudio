@@ -63,30 +63,43 @@ struct BuildConsoleView: View {
     private var summary: some View {
         StudioCard {
             VStack(alignment: .leading, spacing: 10) {
-                HStack {
+                HStack(spacing: 9) {
                     StudioStatusDot(color: phaseColor)
-                    Text(phaseText).font(.subheadline.weight(.semibold))
-                Spacer()
-                if runner.errorCount > 0 {
-                    StatusChip(text: "\(runner.errorCount) error\(runner.errorCount == 1 ? "" : "s")", color: .red)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(project.name)
+                            .font(.headline)
+                        Text(phaseText)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
                 }
-                if runner.warningCount > 0 {
-                    StatusChip(text: "\(runner.warningCount) warning\(runner.warningCount == 1 ? "" : "s")", color: .orange)
+
+                HStack(spacing: 7) {
+                    StudioPill(text: "\(runner.lines.count) lines", systemImage: "terminal", tint: .secondary)
+                    if runner.errorCount > 0 {
+                        StudioPill(text: "\(runner.errorCount) error\(runner.errorCount == 1 ? "" : "s")", systemImage: "xmark.octagon.fill", tint: .red)
+                    }
+                    if runner.warningCount > 0 {
+                        StudioPill(text: "\(runner.warningCount) warning\(runner.warningCount == 1 ? "" : "s")", systemImage: "exclamationmark.triangle.fill", tint: .orange)
+                    }
                 }
-            }
-            if let artifact = runner.artifact {
-                Text((artifact as NSString).lastPathComponent)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.secondary)
-            }
-            if runner.phase.isRunning {
-                Button(role: .destructive) {
-                    runner.cancel()
-                } label: {
-                    Label("Cancel", systemImage: "stop.circle")
+
+                if let artifact = runner.artifact {
+                    Label((artifact as NSString).lastPathComponent, systemImage: "shippingbox.fill")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.secondary)
                 }
-                .buttonStyle(.bordered)
-            }
+                if runner.phase.isRunning {
+                    Button(role: .destructive) {
+                        runner.cancel()
+                    } label: {
+                        Label("Cancel Build", systemImage: "stop.circle.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                }
             }
         }
     }
